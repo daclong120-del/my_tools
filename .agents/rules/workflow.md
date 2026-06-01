@@ -1,0 +1,15 @@
+---
+trigger: glob
+---
+
+1. khi gặp lỗi: chỉ cần tập trung token tìm nguyên nhân thôi , tối ưu token não sết sức chỉ cần đạt mục tiêu tìm nguyên nhân
+2. khi tìm được nguyên nhân nhưng chưa xỷ lý được trong 1,2 lần thì ngay lập tức nhận biết đây là một vấn đề siêu khó nhận thức bản thân chưa đủ khả năng giải quyết và ngay lập tức, vì bản nhân có thể bản thân rơi vào ảo giác (chưa đủ khả năng mà cứ tưởng mình làm được). Và ngay lập tức bật cảnh bảo lập ra kế hoạch nhiều phase cho nhiều cách sử lý khác nhau. Tôi cho phép bạn sử dụng git để backup dữ liệu và tạo checkpoint để quay lại. Sử dụng các tool do tôi cung cấp và các tool có sẵn , không tự ý thêm vào nếu không được tôi cho phép.
+3. Mỗi khi thành công giải quyết được vấn đề thì bạn phải tự commit đánh dấu lại
+4. Quy tắc Test Tự động khép kín (Automated TDD - Tránh điểm mù): Vì con người không thể luôn túc trực review, Agent BẮT BUỘC phải tự xác thực theo quy trình: (1) Viết script test trong thư mục `test\_env` TRƯỚC TIÊN. (2) Chạy script test bằng terminal và tự đọc Output. (3) Nếu Output báo lỗi (Exit code khác 0, Exception), Agent phải ở lại `test\_env` để sửa và chạy lại test cho đến khi thành công. CẤM TUYỆT ĐỐI can thiệp vào thư mục main nếu test chưa passed. Chỉ khi có bằng chứng Console báo thành công hoàn toàn, Agent mới được phép áp dụng code vào main và commit.
+5. "Cái gì cũng có hướng giải quyết cả". Đừng đã quá an toàn khi chọn cách hiện cảnh báo, chọn phương án an toàn, vì bạn đang trốn tránh không tìm phương án thực thi mà chỉ hiện cảnh báo. Nếu lỗi thì hãy đọc lại rule 1,2
+6. khi thành công hoàn thiện thì tự commit lại, các commit phải rõ ràng ngắn gọn tiếng việt đúng mục đích mục tiêu ta đã làm.
+7. không được dùng try, except hay bất kỳ cái gì tương tự thế. 1 là giải quyết được vấn đề, 2 là báo lỗi để giải quyết vấn đề đọc lại rule 5.
+8. nếu tôi yêu cầu một vấn đề đầu tiên bạn phải biết tự đánh giá nó có phải là một vấn đề phức tạp không để mà chia thành nhiều phase, lập kế hoạch nhiều phase như một chuyên gia, thực hiện tối ưu token hết sức.
+9. nếu được yêu cầu vấn đề nhỏ thì tự giải quyết nếu thấy to thì chia ra nhiều phase giải quyết. nếu lỗi thì tìm ra nhiều nguyên nhân lại chia ra nhiều phase, khi giải quyết từng nguyên nhân khi cách làm này không được thì thực hiện phase khác. phải luôn tự lập kế hoạch
+10. \[Sửa Rule 3 \& 6] Định nghĩa lại chữ "Thành công": "Chỉ được coi là giải quyết thành công khi và chỉ khi MÀN HÌNH TERMINAL TRẢ VỀ OUTPUT KHÔNG CÓ LỖI (Exit code 0). Tuyệt đối không được tự định nghĩa 'thành công' dựa trên suy luận logic hay lý thuyết. Phải có bằng chứng là kết quả test thực tế mới được phép dùng lệnh git commit."
+11. Câu hỏi kiểm điểm (Reflection Prompt): "Trước khi sử dụng Tool để can thiệp vào bất kỳ file nào trong thư mục gốc, Agent bắt buộc phải tự in ra màn hình câu hỏi này: 'Ta đã chạy file test và nhìn thấy output thực tế chưa? Hay ta chỉ đang ảo tưởng là code sẽ chạy được?'. Nếu chưa có output thực tế, lập tức hủy bỏ thao tác can thiệp."

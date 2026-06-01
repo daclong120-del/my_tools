@@ -1,0 +1,8 @@
+Invoice INV-2026-9999
+Date: 2026-05-31
+Vendor: Cong ty Cong nghe GptTaste
+Item: Ban quyen phan mem Chat Widget (Qty: 2, Price: 250.0) -> Amount: 500.0
+Item: Dich vu setup may chu Cloud (Qty: 1, Price: 1000.0) -> Amount: 1000.0
+Subtotal: 1500.0
+VAT: 150.0
+Total: 1650.0

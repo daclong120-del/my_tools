@@ -1,0 +1,2 @@
+[+] HTTP Status: 200
+[+] Response body: [{"index":1,"tab_id":"tab_1780274489696_f1664e","url":"https://socialpeta.com/modules/creative/display-ads","title":"广大大 - 展示广告"}]

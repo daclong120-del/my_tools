@@ -1,0 +1,6 @@
+[*] Connecting to Chrome via CDP on port 9222...
+[+] Connected! Contexts count: 1
+[+] Pages count: 1
+  Tab 0: Title='广大大 - 展示广告', URL='https://socialpeta.com/modules/creative/display-ads'
+    - page.evaluate('window.__tab_id') returned: None
+    - Assigned new tab_id = tab_1780274489696_f1664e successfully

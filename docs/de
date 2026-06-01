@@ -1,0 +1,123 @@
+```
+my_tool/
+├── invoice_parser/          ← Python backend
+│   ├── __init__.py
+│   ├── config.py
+│   ├── models.py
+│   ├── core.py
+│   ├── agent.py
+│   ├── api.py
+│   ├── routes/
+│   │   └── __init__.py
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── llm.py
+│   │   ├── storage.py
+│   │   └── external.py
+│   └── cli.py
+│
+├── frontend/                ← Next.js
+│   ├── app/
+│   ├── components/
+│   ├── public/
+│   ├── next.config.js       ← output: 'export'
+│   └── package.json
+│
+├── electron/                ← Electron wrapper
+│   ├── main.js              ← spawn backend, load frontend
+│   ├── preload.js
+│   └── package.json         ← electron-builder config
+│
+├── scripts/                 ← build scripts
+│   ├── build.sh             ← build tất cả 1 lệnh
+│   └── dev.sh               ← chạy dev mode
+│
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+---
+
+**Luồng build production:**
+
+```bash
+# scripts/build.sh
+next build                        # → frontend/out/
+pyinstaller api.py --onefile      # → dist/api.exe
+electron-builder build            # bundle tất cả → installer
+```
+
+**Luồng dev hàng ngày:**
+
+```bash
+# scripts/dev.sh
+uvicorn invoice_parser.api:app    # terminal 1
+next dev                          # terminal 2
+# Electron không cần chạy lúc dev
+```
+
+---
+
+Lúc dev mày chỉ cần FastAPI + Next.js, Electron chỉ dùng khi build production. Không phức tạp hơn stack bình thường là mấy.```
+my_tool/
+├── invoice_parser/          ← Python backend
+│   ├── __init__.py
+│   ├── config.py
+│   ├── models.py
+│   ├── core.py
+│   ├── agent.py
+│   ├── api.py
+│   ├── routes/
+│   │   └── __init__.py
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── llm.py
+│   │   ├── storage.py
+│   │   └── external.py
+│   └── cli.py
+│
+├── frontend/                ← Next.js
+│   ├── app/
+│   ├── components/
+│   ├── public/
+│   ├── next.config.js       ← output: 'export'
+│   └── package.json
+│
+├── electron/                ← Electron wrapper
+│   ├── main.js              ← spawn backend, load frontend
+│   ├── preload.js
+│   └── package.json         ← electron-builder config
+│
+├── scripts/                 ← build scripts
+│   ├── build.sh             ← build tất cả 1 lệnh
+│   └── dev.sh               ← chạy dev mode
+│
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+---
+
+**Luồng build production:**
+
+```bash
+# scripts/build.sh
+next build                        # → frontend/out/
+pyinstaller api.py --onefile      # → dist/api.exe
+electron-builder build            # bundle tất cả → installer
+```
+
+**Luồng dev hàng ngày:**
+
+```bash
+# scripts/dev.sh
+uvicorn invoice_parser.api:app    # terminal 1
+next dev                          # terminal 2
+# Electron không cần chạy lúc dev
+```
+
+---
+
+Lúc dev mày chỉ cần FastAPI + Next.js, Electron chỉ dùng khi build production. Không phức tạp hơn stack bình thường là mấy.

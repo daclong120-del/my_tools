@@ -1,0 +1,51 @@
+Đúng, đây là vấn đề thật. Nếu chỉ bundle Electron + code Python thôi thì **máy không có Python sẽ không chạy được**.
+
+---
+
+**Giải pháp: đóng gói Python runtime luôn vào app**
+
+```
+Electron app/
+├── resources/
+│   ├── python/          ← Python runtime đóng gói sẵn
+│   │   └── python.exe   ← chạy độc lập, không cần cài
+│   ├── backend/         ← code Python + thư viện
+│   └── frontend/        ← Next.js static build
+└── electron/
+    └── main.js          ← spawn resources/python/python.exe
+```
+
+---
+
+**Cách làm cụ thể:**
+
+**Bước 1** — Dùng PyInstaller đóng gói FastAPI thành executable:
+```bash
+pyinstaller --onefile api.py
+# ra file dist/api.exe — chạy độc lập không cần Python
+```
+
+**Bước 2** — Electron spawn file đó thay vì `python api.py`:
+```js
+// main.js
+const server = spawn('./resources/api.exe')
+```
+
+**Bước 3** — `electron-builder` bundle tất cả lại:
+```
+api.exe + frontend static + Electron  →  1 file cài đặt
+```
+
+---
+
+**Đây đúng là cách AnythingLLM, LM Studio làm.** User download về, chạy installer, không cần cài Python hay Node.js gì cả.
+
+---
+
+**Nhược điểm thật sự cần biết:**
+
+- File nặng hơn nhiều (~200-400MB vì bundle cả Python runtime)
+- Build lâu hơn
+- Mỗi platform (Windows/Mac/Linux) phải build riêng
+
+Nhưng đây là cách duy nhất đảm bảo **chạy được mọi máy** không cần cài gì thêm.

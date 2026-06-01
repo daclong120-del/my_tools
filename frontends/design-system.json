@@ -1,0 +1,169 @@
+{
+  "name": "MyBox Design System",
+  "version": "1.0.0",
+  "theme": {
+    "colors": {
+      "backgrounds": {
+        "dark": "#0a0b0e",
+        "app": "#0f1014",
+        "sidebar": "#16171d",
+        "card": "#1c1e26",
+        "card_hover": "#232631",
+        "input": "#1a1b22"
+      },
+      "borders": {
+        "default": "#21232d"
+      },
+      "primary": {
+        "default": "#3051ff",
+        "hover": "#4866ff",
+        "light": "rgba(48, 81, 255, 0.15)"
+      },
+      "accent": {
+        "gray_active": "#232530"
+      },
+      "categories": {
+        "image": {
+          "color": "#ff4d5a",
+          "bg": "rgba(255, 77, 90, 0.12)"
+        },
+        "video": {
+          "color": "#4b66f9",
+          "bg": "rgba(75, 102, 249, 0.12)"
+        },
+        "music": {
+          "color": "#10b981",
+          "bg": "rgba(16, 185, 129, 0.12)"
+        },
+        "document": {
+          "color": "#f59e0b",
+          "bg": "rgba(245, 158, 11, 0.12)"
+        }
+      },
+      "text": {
+        "primary": "#ffffff",
+        "secondary": "#9fa2b4",
+        "muted": "#5e616f"
+      }
+    },
+    "typography": {
+      "fonts": {
+        "sans": "'Inter', sans-serif",
+        "display": "'Outfit', sans-serif"
+      },
+      "weights": {
+        "light": 300,
+        "regular": 400,
+        "medium": 500,
+        "semibold": 600,
+        "bold": 700,
+        "extrabold": 800
+      },
+      "sizes": {
+        "xs": "11px",
+        "sm": "13px",
+        "base": "14px",
+        "md": "15px",
+        "lg": "16px",
+        "xl": "20px",
+        "2xl": "24px",
+        "hero": "54px",
+        "hero_mobile": "42px"
+      }
+    },
+    "spacing": {
+      "xxs": "4px",
+      "xs": "6px",
+      "sm": "8px",
+      "md": "10px",
+      "lg": "12px",
+      "xl": "14px",
+      "2xl": "16px",
+      "3xl": "18px",
+      "4xl": "20px",
+      "5xl": "24px",
+      "6xl": "28px",
+      "7xl": "32px",
+      "8xl": "36px",
+      "9xl": "40px",
+      "10xl": "48px",
+      "giant": "80px"
+    },
+    "borderRadius": {
+      "scrollbar": "4px",
+      "button": "8px",
+      "input": "8px",
+      "card_small": "10px",
+      "card_medium": "12px",
+      "pill": "20px"
+    },
+    "layout": {
+      "sidebar_width": "260px",
+      "filter_width": "240px"
+    },
+    "animations": {
+      "fadeIn": "fadeIn 0.3s ease-out",
+      "scaleIn": "scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+      "folderFloat": "folderFloat 6s ease-in-out infinite",
+      "glowPulse": "glowPulse 8s infinite ease-in-out"
+    }
+  },
+  "patterns": {
+    "buttons": {
+      "primary": {
+        "description": "Solid primary color button with hover elevation and glow",
+        "styles": "background-color: var(--color-primary); color: #ffffff; padding: 10px 20px; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; hover: { background-color: var(--color-primary-hover); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 81, 255, 0.3); }"
+      },
+      "secondary": {
+        "description": "Ghost button with custom border and hover light background opacity",
+        "styles": "background-color: transparent; color: var(--text-primary); border: 1px solid var(--color-border); padding: 10px 20px; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; hover: { background-color: rgba(255, 255, 255, 0.05); border-color: var(--text-secondary); }"
+      },
+      "sidebar_action": {
+        "description": "Outline button for creating actions inside the sidebar",
+        "styles": "background-color: transparent; border: 1px solid var(--color-border); color: var(--text-primary); padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; hover: { background-color: rgba(255, 255, 255, 0.03); border-color: var(--text-muted); }"
+      },
+      "upgrade": {
+        "description": "Bold primary button used for premium conversion inside sidebar footer",
+        "styles": "background-color: var(--color-primary); color: #ffffff; border: none; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; hover: { background-color: var(--color-primary-hover); }"
+      },
+      "landing_login": {
+        "description": "Semi-transparent border button for header navigation",
+        "styles": "border: 1px solid rgba(255, 255, 255, 0.15); background-color: transparent; color: var(--text-primary); padding: 8px 24px; border-radius: 6px; font-weight: 500; font-size: 15px; cursor: pointer; hover: { border-color: var(--text-primary); background-color: rgba(255, 255, 255, 0.03); }"
+      }
+    },
+    "cards": {
+      "storage": {
+        "description": "Overview grid cards containing status details and horizontal progress bar",
+        "styles": "background-color: var(--bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 20px; transition: all 0.2s ease; hover: { background-color: var(--bg-card-hover); transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.05); }"
+      },
+      "folder": {
+        "description": "Standard list grid folder item with visual folder icons",
+        "styles": "background-color: var(--bg-card); border: 1px solid var(--color-border); border-radius: 10px; padding: 18px; hover: { background-color: var(--bg-card-hover); transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.05); }"
+      },
+      "file": {
+        "description": "Files grid item with upper preview container and lower details bar",
+        "styles": "background-color: var(--bg-card); border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; hover: { background-color: var(--bg-card-hover); transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.05); } preview: { height: 120px; background: rgba(255,255,255,0.02) } info: { padding: 12px 16px }"
+      },
+      "suggestion": {
+        "description": "Quick-access suggestion cards with Unsplash image thumbnail and lower metadata bar",
+        "styles": "background-color: var(--bg-card); border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; hover: { background-color: var(--bg-card-hover); transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.05); } thumbnail: { height: 120px; hover: scale(1.05) }"
+      }
+    },
+    "inputs": {
+      "search": {
+        "description": "Left-aligned icon input search bar",
+        "styles": "background-color: var(--bg-input); border: 1px solid transparent; border-radius: 8px; padding: 10px 14px 10px 42px; font-size: 14px; color: var(--text-primary); transition: all 0.2s ease; focus: { outline: none; border-color: var(--color-primary); }"
+      }
+    },
+    "checkboxes": {
+      "custom": {
+        "description": "Sleek custom checkbox replacing native element",
+        "styles": "width: 18px; height: 18px; border: 2px solid var(--text-muted); border-radius: 4px; checked: { background: var(--color-primary); border-color: var(--color-primary); indicator: white checkmark 4x9px rotated 45deg }"
+      }
+    },
+    "layout": {
+      "app_structure": "Flex container of 100vh width with sticky Sidebar (260px) and flex-1 main scrollable content panel.",
+      "dashboard_sections": "Header pill + action row, followed by Overview Storage grid (4 columns), Suggestions grid (4 columns), and Recent Files table (custom rows with active row styling)."
+    }
+  }
+}
