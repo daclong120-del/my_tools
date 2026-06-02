@@ -160,41 +160,122 @@ def get_stats():
         "tab_states": tab_states_copy
     }
 
+from pydantic import BaseModel
+
+class ConfigUpdate(BaseModel):
+    download_dir: str
+
+@router.get("/config")
+def get_config():
+    return {
+        "download_dir": core.download_dir
+    }
+
+@router.post("/config")
+def update_config(data: ConfigUpdate):
+    download_dir = data.download_dir.strip()
+    if not download_dir:
+        raise HTTPException(status_code=400, detail="Đường dẫn không được để trống")
+    
+    if len(download_dir) > 150:
+        raise HTTPException(status_code=400, detail="Đường dẫn quá dài (tối đa 150 ký tự) để đảm bảo an toàn khi tạo thư mục con.")
+    
+    try:
+        os.makedirs(download_dir, exist_ok=True)
+        test_file = os.path.join(download_dir, ".write_test")
+        with open(test_file, 'w', encoding='utf-8') as f:
+            f.write("test")
+        os.remove(test_file)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Không có quyền ghi vào thư mục: {str(e)}")
+        
+    core.save_config(download_dir)
+    return {"status": "success", "download_dir": core.download_dir}
+
+@router.post("/open_folder")
+def open_folder():
+    import platform
+    import subprocess
+    try:
+        path = core.download_dir
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+        
+        if platform.system() == "Windows":
+            os.startfile(path)
+        elif platform.system() == "Darwin":
+            subprocess.run(["open", path])
+        else:
+            subprocess.run(["xdg-open", path])
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Không thể mở thư mục: {str(e)}")
+
+def compile_csv_data(items: list[dict]) -> str:
+    import io
+    import csv
+    output = io.StringIO()
+    output.write('\ufeff')
+    
+    fieldnames = [
+        "app_name", "platform", "area", "media_type", 
+        "file_size", "download_time", "video_url", "youtube_url", "ad_url"
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for item in items:
+        writer.writerow({
+            "app_name": item.get("app_name", "AdVideo"),
+            "platform": item.get("platform", "Facebook"),
+            "area": item.get("area", "Vietnam"),
+            "media_type": item.get("media_type", "Video"),
+            "file_size": item.get("file_size", 0),
+            "download_time": item.get("download_time", ""),
+            "video_url": item.get("video_url", ""),
+            "youtube_url": item.get("youtube_url", ""),
+            "ad_url": item.get("video_url") or item.get("youtube_url") or ""
+        })
+    return output.getvalue()
+
+@router.post("/export_csv_to_path")
+def export_csv_to_path(path: str):
+    try:
+        items = core.scan_json_metadata_recursively()
+        csv_content = compile_csv_data(items)
+        parent_dir = os.path.dirname(path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+        with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+            f.write(csv_content)
+        return {"status": "success", "path": path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi xuất báo cáo CSV: {str(e)}")
+
 @router.get("/report")
 def get_report():
     """
-    Đọc dữ liệu lịch sử tải từ file download_info.csv
+    Quét đệ quy thư mục tải xuống hiện tại tìm tất cả file JSON để gộp dữ liệu metadata
     """
-    with core.metadata_lock:
-        if not os.path.exists(core.csv_path):
-            return []
-        rows = []
-        try:
-            with open(core.csv_path, 'r', encoding='utf-8-sig', newline='', errors='ignore') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    rows.append(row)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Lỗi đọc file csv báo cáo: {str(e)}")
-        return rows
+    try:
+        return core.scan_json_metadata_recursively()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi quét dữ liệu báo cáo: {str(e)}")
 
 @router.get("/export")
 def export_report():
     """
-    Tải trực tiếp file báo cáo download_info.csv
+    Tải trực tiếp file báo cáo CSV từ kết quả quét đệ quy
     """
-    with core.metadata_lock:
-        if not os.path.exists(core.csv_path):
-            raise HTTPException(status_code=404, detail="File báo cáo chưa tồn tại. Vui lòng thực hiện tải trước.")
-        try:
-            with open(core.csv_path, 'rb') as f:
-                content = f.read()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Lỗi đọc file báo cáo: {str(e)}")
+    try:
+        items = core.scan_json_metadata_recursively()
+        csv_content = compile_csv_data(items)
+        content_bytes = csv_content.encode('utf-8-sig')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi xuất file báo cáo: {str(e)}")
             
     from fastapi import Response
     return Response(
-        content=content,
+        content=content_bytes,
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=download_info.csv"}
     )

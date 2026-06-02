@@ -1,7 +1,7 @@
 # SocialPeta Downloader
 
 > Tổng hợp kiến thức về công cụ tự động hóa tải video SocialPeta trong dự án.
-> Cập nhật lần cuối: 2026-06-01
+> Cập nhật lần cuối: 2026-06-02
 
 ---
 
@@ -221,3 +221,13 @@
   target_id = target_info.get("targetInfo", {}).get("targetId")
   ```
 - **Files liên quan**: `tools/socialpeta_downloader/core/tab_manager.py`
+
+### Dynamic Directory Initialization in Frozen Mode (Khởi tạo thư mục động khi đóng gói)
+- **Ngày**: 2026-06-02
+- **Chi tiết**: Để tránh việc đóng gói các file rác/temp của dev vào bộ cài đặt (installer) và đảm bảo quyền ghi ghi app chạy ở chế độ production, thư mục `data/` được loại bỏ khỏi `extraResources` của Electron. Thay vào đó, backend FastAPI (`api.exe`) tự động nhận diện chế độ chạy frozen (`sys.frozen`) để lấy đường dẫn thư mục cài đặt thực tế (`sys.executable`) và tự động khởi tạo các thư mục lưu trữ cần thiết (`data/videos`, `data/playwright_session`) khi chạy lần đầu.
+- **Files liên quan**: `tools/socialpeta_downloader/config.py`, `electron/package.json`
+
+### Bundling FFmpeg and FFprobe within Electron Installer (Tích hợp FFmpeg/FFprobe vào bộ cài)
+- **Ngày**: 2026-06-02
+- **Chi tiết**: Để tránh yêu cầu người dùng cuối phải cài đặt FFmpeg/FFprobe và cấu hình biến môi trường PATH thủ công, bộ cài đặt tự động tích hợp sẵn các file thực thi này. Script `build.py` sẽ quét tìm `ffmpeg` và `ffprobe` trên máy build (`shutil.which`), sao chép chúng vào thư mục `electron/resources/`. Cấu hình `package.json` (phần `extraResources`) sẽ đóng gói chúng vào app. Đồng thời, code backend tự động trỏ đến đường dẫn của bộ cài đặt này thông qua `settings.FFMPEG_PATH` và `settings.FFPROBE_PATH` khi ứng dụng chạy ở dạng frozen.
+- **Files liên quan**: `scripts/build.py`, `electron/package.json`, `tools/socialpeta_downloader/config.py`, `tools/socialpeta_downloader/core/deduplication.py`, `tools/socialpeta_downloader/core/downloader.py`

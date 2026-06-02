@@ -31,22 +31,98 @@ class SocialPetaDownloaderCore(
     """
     Core engine that combines functionalities via Mixin inheritance.
     """
-    def __init__(self):
-        self.download_dir = settings.DOWNLOAD_DIR
-        self.session_dir = settings.SESSION_DIR
-        
-        # Paths
+    def get_default_download_dir(self) -> str:
+        import sys
+        if getattr(sys, 'frozen', False):
+            if os.name == 'nt':
+                import winreg
+                try:
+                    sub_key = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub_key) as key:
+                        downloads_dir = winreg.QueryValueEx(key, "{374DE290-123F-4565-9164-39C4925E467B}")[0]
+                        return os.path.join(downloads_dir, "SocialPeta_Downloader")
+                except Exception:
+                    pass
+            return os.path.join(os.path.expanduser("~"), "Downloads", "SocialPeta_Downloader")
+        else:
+            return r"D:\Python\my_tools\data\videos"
+
+    def update_download_dir(self, new_dir: str):
+        self.download_dir = new_dir
         self.temp_json_path = os.path.join(self.download_dir, "download_temp.json")
         self.csv_path = os.path.join(self.download_dir, "download_info.csv")
         self.audit_csv_path = os.path.join(self.download_dir, "duplicate_audit.csv")
         self.temp_download_dir = os.path.join(self.download_dir, ".temp_download")
         self.temp_queue_dir = os.path.join(self.download_dir, ".temp")
-        
-        # Ensure directories exist
         os.makedirs(self.download_dir, exist_ok=True)
-        os.makedirs(self.session_dir, exist_ok=True)
         os.makedirs(self.temp_download_dir, exist_ok=True)
         os.makedirs(self.temp_queue_dir, exist_ok=True)
+
+    def load_config(self):
+        import json
+        config_path = os.path.join(settings.ROOT_DIR, "data", "config.json")
+        default_dir = self.get_default_download_dir()
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                stored_dir = cfg.get("download_dir")
+                if stored_dir:
+                    self.update_download_dir(stored_dir)
+                    return
+            except Exception:
+                pass
+        self.update_download_dir(default_dir)
+
+    def save_config(self, new_dir: str):
+        import json
+        config_path = os.path.join(settings.ROOT_DIR, "data", "config.json")
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        try:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump({"download_dir": new_dir}, f, indent=4, ensure_ascii=False)
+            self.update_download_dir(new_dir)
+        except Exception as e:
+            print(f"[-] Failed to save config: {e}")
+
+    def scan_json_metadata_recursively(self) -> list[dict]:
+        import json
+        results = {}
+        if not os.path.exists(self.download_dir):
+            return []
+        
+        for root, dirs, files in os.walk(self.download_dir):
+            for file in files:
+                if file.endswith(".json") and not file.endswith(".tmp") and file != "config.json" and file != "download_temp.json":
+                    file_path = os.path.join(root, file)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            item = json.load(f)
+                        ad_id = item.get("ad_id")
+                        if ad_id:
+                            existing = results.get(ad_id)
+                            if not existing:
+                                results[ad_id] = item
+                            else:
+                                if item.get("status") == "done" and existing.get("status") != "done":
+                                    results[ad_id] = item
+                                elif item.get("status") == existing.get("status"):
+                                    item_time = item.get("download_time", "")
+                                    existing_time = existing.get("download_time", "")
+                                    if item_time > existing_time:
+                                        results[ad_id] = item
+                    except Exception:
+                        pass
+        return list(results.values())
+
+    def __init__(self):
+        self.session_dir = settings.SESSION_DIR
+        
+        # Load config to resolve self.download_dir and other paths
+        self.load_config()
+        
+        # Ensure session directory exists
+        os.makedirs(self.session_dir, exist_ok=True)
         
         # Concurrency & Queues
         self.filter_queue = queue.Queue()  # (fpath, item)

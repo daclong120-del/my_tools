@@ -35,6 +35,14 @@
       {
         "from": "resources/api.exe",
         "to": "api.exe"
+      },
+      {
+        "from": "resources/ffmpeg.exe",
+        "to": "ffmpeg.exe"
+      },
+      {
+        "from": "resources/ffprobe.exe",
+        "to": "ffprobe.exe"
       }
     ],
     "win": {

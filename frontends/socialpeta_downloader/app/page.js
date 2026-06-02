@@ -23,7 +23,8 @@ import {
   RefreshCw,
   LogOut,
   ChevronRight,
-  Settings
+  Settings,
+  FolderOpen
 } from "lucide-react";
 
 export default function Home() {
@@ -34,6 +35,8 @@ export default function Home() {
   const [debugPort, setDebugPort] = useState("9222");
   const [workersCount, setWorkersCount] = useState(4);
   const [errorMessage, setErrorMessage] = useState("");
+  const [downloadDir, setDownloadDir] = useState("");
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
   
   // Tab Manager States
   const [tabs, setTabs] = useState([]);
@@ -133,6 +136,24 @@ export default function Home() {
     };
     autoCheck();
   }, []);
+
+  // Load configuration from backend
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const res = await fetch("http://127.0.0.1:8003/api/v1/socialpeta/config");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.download_dir) {
+            setDownloadDir(data.download_dir);
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi lấy cấu hình từ backend:", err);
+      }
+    };
+    loadConfig();
+  }, [connectionStatus]);
 
   // Handle WebSocket connection for real-time progress & logs
   useEffect(() => {
@@ -482,9 +503,28 @@ export default function Home() {
     });
   };
 
-  const handleExportCSV = () => {
-    window.open("http://127.0.0.1:8003/api/v1/socialpeta/export", "_blank");
-    addLog("success", "Đã xuất dữ liệu download_info.csv thành công!");
+  const handleExportCSV = async () => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      try {
+        const filePath = await window.electronAPI.showSaveDialog("download_info.csv");
+        if (filePath) {
+          const res = await fetch("http://127.0.0.1:8003/api/v1/socialpeta/export_csv_to_path?path=" + encodeURIComponent(filePath), {
+            method: "POST"
+          });
+          if (res.ok) {
+            addLog("success", `Đã lưu tệp báo cáo CSV thành công tại: ${filePath}`);
+          } else {
+            const err = await res.json();
+            addLog("error", `Lỗi xuất CSV: ${err.detail || "Không rõ nguyên nhân"}`);
+          }
+        }
+      } catch (err) {
+        addLog("error", `Lỗi hộp thoại lưu file: ${err.message}`);
+      }
+    } else {
+      window.open("http://127.0.0.1:8003/api/v1/socialpeta/export", "_blank");
+      addLog("success", "Đã xuất dữ liệu download_info.csv thành công!");
+    }
   };
 
   // Render Setup / Connection view as the Landing Page Layout
@@ -569,6 +609,93 @@ export default function Home() {
                   <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                     Gợi ý: Hệ thống khuyên dùng <strong>{sysMonitorSuggestion} luồng</strong> dựa trên số CPU nhân thực tế của máy.
                   </span>
+                </div>
+
+                <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+                  <label className="form-label">Thư mục lưu tải xuống</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={downloadDir}
+                      onChange={(e) => {
+                        if (typeof window !== 'undefined' && !window.electronAPI) {
+                          setDownloadDir(e.target.value);
+                        }
+                      }}
+                      placeholder="Chọn thư mục tải xuống..."
+                      required
+                      disabled={(typeof window !== 'undefined' && !!window.electronAPI) || isSavingConfig}
+                      style={{ flex: 1, padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '14px' }}
+                    />
+                    {typeof window !== 'undefined' && window.electronAPI ? (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={async () => {
+                          try {
+                            const selected = await window.electronAPI.selectDirectory(downloadDir);
+                            if (selected) {
+                              setIsSavingConfig(true);
+                              const res = await fetch("http://127.0.0.1:8003/api/v1/socialpeta/config", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ download_dir: selected })
+                              });
+                              if (res.ok) {
+                                const data = await res.json();
+                                setDownloadDir(data.download_dir);
+                                addLog("success", `Đã đổi thư mục tải xuống thành: ${data.download_dir}`);
+                              } else {
+                                const err = await res.json();
+                                addLog("error", `Lỗi đổi thư mục: ${err.detail || "Không rõ nguyên nhân"}`);
+                              }
+                            }
+                          } catch (err) {
+                            addLog("error", `Lỗi chọn thư mục: ${err.message}`);
+                          } finally {
+                            setIsSavingConfig(false);
+                          }
+                        }}
+                        disabled={isSavingConfig}
+                        style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <FolderOpen size={16} />
+                        <span>Chọn</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={async () => {
+                          try {
+                            setIsSavingConfig(true);
+                            const res = await fetch("http://127.0.0.1:8003/api/v1/socialpeta/config", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ download_dir: downloadDir })
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              setDownloadDir(data.download_dir);
+                              addLog("success", `Đã lưu thư mục tải xuống thành công: ${data.download_dir}`);
+                            } else {
+                              const err = await res.json();
+                              addLog("error", `Lỗi lưu thư mục: ${err.detail || "Không rõ nguyên nhân"}`);
+                            }
+                          } catch (err) {
+                            addLog("error", `Lỗi lưu thư mục: ${err.message}`);
+                          } finally {
+                            setIsSavingConfig(false);
+                          }
+                        }}
+                        disabled={isSavingConfig}
+                        style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <span>Lưu</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {connectionStatus !== "connected" ? (
@@ -883,6 +1010,40 @@ export default function Home() {
                 style={{ width: `${(workersCount / 16) * 100}%` }}
               ></div>
             </div>
+            {downloadDir && (
+              <div 
+                className="sidebar-storage-info" 
+                onClick={async () => {
+                  try {
+                    await fetch("http://127.0.0.1:8003/api/v1/socialpeta/open_folder", { method: "POST" });
+                  } catch (e) {
+                    console.error("Lỗi mở thư mục:", e);
+                  }
+                }}
+                title={downloadDir}
+                style={{ marginTop: '14px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start', background: 'rgba(255,255,255,0.02)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}
+              >
+                <div className="sidebar-storage-label" style={{ width: '100%', justifyContent: 'space-between', display: 'flex' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FolderOpen size={13} style={{ color: 'var(--color-primary)' }} />
+                    <span style={{ fontSize: '11px', fontWeight: '600' }}>Thư mục lưu</span>
+                  </div>
+                  <span style={{ fontSize: '10px', color: 'var(--color-primary)', textDecoration: 'underline' }}>Mở</span>
+                </div>
+                <div style={{ 
+                  fontSize: '11px', 
+                  color: 'var(--text-secondary)', 
+                  whiteSpace: 'nowrap', 
+                  overflow: 'hidden', 
+                  textOverflow: 'ellipsis', 
+                  width: '100%',
+                  textAlign: 'left',
+                  marginTop: '2px'
+                }}>
+                  {downloadDir}
+                </div>
+              </div>
+            )}
             {connectionStatus === "connected" && (
               <button 
                 className="btn-upgrade" 
@@ -1114,6 +1275,22 @@ export default function Home() {
                       <div className="storage-mini-progress">
                         <div className="storage-mini-bar music" style={{ width: `${stats.total > 0 ? (stats.done / stats.total) * 100 : 0}%` }}></div>
                       </div>
+                      {downloadDir && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', cursor: 'pointer' }}
+                             onClick={async () => {
+                               try {
+                                 await fetch("http://127.0.0.1:8003/api/v1/socialpeta/open_folder", { method: "POST" });
+                               } catch (e) {
+                                 console.error("Lỗi mở thư mục:", e);
+                               }
+                             }}
+                             title={`Mở thư mục: ${downloadDir}`}>
+                          <FolderOpen size={12} style={{ color: 'var(--color-music)', flexShrink: 0 }} />
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+                            {downloadDir}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

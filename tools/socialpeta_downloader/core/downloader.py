@@ -14,6 +14,7 @@ import requests
 import threading
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
+from socialpeta_downloader.config import settings
 
 class DynamicSemaphore:
     """
@@ -219,8 +220,9 @@ class DownloaderMixin:
                             self.append_to_audit_csv(ad_id, item.get("app_name", "UnknownApp"), dup_ad_id, f"Image MD5 match with {dup_ad_id}")
                         else:
                             filename, stt = self.get_unique_image_filename(item.get("app_name", "UnknownApp"), image_url)
-                            os.makedirs(self.download_dir, exist_ok=True)
-                            final_path = os.path.join(self.download_dir, filename)
+                            target_dir = item.get("subfolder_path") or self.download_dir
+                            os.makedirs(target_dir, exist_ok=True)
+                            final_path = os.path.join(target_dir, filename)
                             try:
                                 shutil.move(temp_output, final_path)
                                 if md5_val:
@@ -231,6 +233,8 @@ class DownloaderMixin:
                                 item["file_size"] = os.path.getsize(final_path)
                                 item["download_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                 self._save_item_state(item)
+                                json_copy_path = os.path.splitext(final_path)[0] + ".json"
+                                self._write_item_file(json_copy_path, item)
                                 self.append_to_csv(item)
                             except Exception as e:
                                 self.log("error", f"Lỗi di chuyển file ảnh Ad {ad_id}: {e}")
@@ -355,11 +359,12 @@ class DownloaderMixin:
                 self.download_semaphore.release()
 
     def stream_3_dedup_filter(self):
+        from socialpeta_downloader.config import settings
         try:
-            subprocess.run(["ffmpeg", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            subprocess.run(["ffprobe", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run([settings.FFMPEG_PATH, "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run([settings.FFPROBE_PATH, "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except Exception:
-            self.log("error", "Lỗi: ffprobe/ffmpeg chưa được cài đặt!")
+            self.log("error", f"Lỗi: ffprobe/ffmpeg chưa được cài đặt! (Đường dẫn: {settings.FFMPEG_PATH} / {settings.FFPROBE_PATH})")
             return
         while self.running:
             try:
@@ -386,8 +391,9 @@ class DownloaderMixin:
                     self.append_to_audit_csv(ad_id, item["app_name"], dup_ad_id, reason)
                 else:
                     final_filename, stt = self.get_unique_filename(item["app_name"])
-                    os.makedirs(self.download_dir, exist_ok=True)
-                    final_path = os.path.join(self.download_dir, final_filename)
+                    target_dir = item.get("subfolder_path") or self.download_dir
+                    os.makedirs(target_dir, exist_ok=True)
+                    final_path = os.path.join(target_dir, final_filename)
                     try:
                         if os.path.exists(final_path):
                             os.remove(final_path)
@@ -400,6 +406,8 @@ class DownloaderMixin:
                         item["saved_path"] = final_path
                         item["download_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         self._save_item_state(item)
+                        json_copy_path = os.path.splitext(final_path)[0] + ".json"
+                        self._write_item_file(json_copy_path, item)
                         self.append_to_csv(item)
                     except Exception as e:
                         self.log("error", f"Lỗi di chuyển file unique cho Ad {ad_id}: {e}")

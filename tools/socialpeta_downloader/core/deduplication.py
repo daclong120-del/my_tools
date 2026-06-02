@@ -12,6 +12,7 @@ import subprocess
 import threading
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
+from socialpeta_downloader.config import settings
 
 class DedupMixin:
     csv_path: str
@@ -71,7 +72,7 @@ class DedupMixin:
     def get_video_duration(self, file_path: str) -> float:
         try:
             cmd = [
-                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                settings.FFPROBE_PATH, "-v", "error", "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1", file_path
             ]
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True, timeout=10)
@@ -83,7 +84,7 @@ class DedupMixin:
     def get_audio_pcm_md5(self, file_path: str) -> Optional[str]:
         try:
             cmd = [
-                "ffmpeg", "-y", "-i", file_path, "-f", "s16le", "-ac", "1", "-ar", "16000", "-"
+                settings.FFMPEG_PATH, "-y", "-i", file_path, "-f", "s16le", "-ac", "1", "-ar", "16000", "-"
             ]
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=30)
             if res.returncode != 0 or not res.stdout:
@@ -95,7 +96,7 @@ class DedupMixin:
     def get_frame_hash_and_brightness(self, file_path: str, timestamp: float) -> Optional[tuple[int, float]]:
         try:
             cmd = [
-                "ffmpeg", "-y", "-ss", f"{timestamp:.3f}", "-i", file_path,
+                settings.FFMPEG_PATH, "-y", "-ss", f"{timestamp:.3f}", "-i", file_path,
                 "-vframes", "1", "-vf", "scale=9x8,format=gray", "-f", "rawvideo", "-"
             ]
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=15)

@@ -193,6 +193,8 @@ class SnifferMixin:
                     
                 fpath = os.path.join(tab_dir, f"{parsed['ad_id']}.json")
                 parsed["fpath"] = fpath
+                parsed["subfolder"] = self.tab_states[tab_index].get("subfolder", "")
+                parsed["subfolder_path"] = self.tab_states[tab_index].get("subfolder_path", "")
                 
                 with self.history_lock:
                     if self._is_ad_already_downloaded(parsed["ad_id"]):

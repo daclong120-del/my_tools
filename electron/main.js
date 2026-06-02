@@ -1,16 +1,24 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
 
-// Disable hardware acceleration to prevent GPU crashes on systems with missing/incompatible graphics drivers
-app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-software-rasterizer');
-app.commandLine.appendSwitch('disable-gpu-sandbox');
-app.commandLine.appendSwitch('no-sandbox');
+let mainWindow;
+let backendProcess;
 
-// Helper to get log path lazily
+// Ensure only one instance of the app is running to prevent cache locking issues
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', (event, commandLine, workingDirectory) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
 function getLogPath(filename) {
   try {
     const userData = app.getPath('userData');
@@ -44,33 +52,24 @@ process.on('unhandledRejection', (reason, promise) => {
 let mainWindow;
 let backendProcess;
 
-// Helper to check if TCP port is active
-const net = require('net');
-function checkPortStatus(port, host, timeout = 500) {
+// Helper to check if backend API is ready via HTTP health endpoint
+const http = require('http');
+function checkBackendHealth(port, host, timeout = 1000) {
   return new Promise((resolve) => {
-    const socket = new net.Socket();
-    let status = false;
-
-    socket.setTimeout(timeout);
-    
-    socket.on('connect', () => {
-      status = true;
-      socket.destroy();
+    const req = http.get(`http://${host}:${port}/health`, { timeout }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          resolve(json.status === 'ready');
+        } catch {
+          resolve(false);
+        }
+      });
     });
-
-    socket.on('timeout', () => {
-      socket.destroy();
-    });
-
-    socket.on('error', () => {
-      socket.destroy();
-    });
-
-    socket.on('close', () => {
-      resolve(status);
-    });
-
-    socket.connect(port, host);
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
   });
 }
 
@@ -114,8 +113,8 @@ function createWindow() {
   async function loadApplication() {
     let retries = 40; // Wait up to 20 seconds (40 * 500ms)
     while (retries > 0) {
-      const active = await checkPortStatus(port, '127.0.0.1');
-      if (active) break;
+      const ready = await checkBackendHealth(port, '127.0.0.1');
+      if (ready) break;
       await new Promise(r => setTimeout(r, 500));
       retries--;
     }
@@ -168,7 +167,8 @@ function startBackend() {
         env: {
           ...process.env,
           PYTHONUTF8: '1',
-          PYTHONIOENCODING: 'utf-8'
+          PYTHONIOENCODING: 'utf-8',
+          USER_DATA_PATH: app.getPath('userData')
         }
       });
 
@@ -208,13 +208,14 @@ app.on('quit', () => {
     try {
       backendProcess.kill();
     } catch (e) {}
-  }
-  if (process.platform === 'win32') {
-    try {
-      const { execSync } = require('child_process');
-      execSync('taskkill /f /im api.exe');
-    } catch (e) {
-      // Ignored if process was already terminated
+    // Fallback: force-kill by PID if graceful kill didn't work
+    if (backendProcess.pid && process.platform === 'win32') {
+      try {
+        const { execSync } = require('child_process');
+        execSync(`taskkill /f /pid ${backendProcess.pid}`, { stdio: 'ignore' });
+      } catch (e) {
+        // Ignored if process was already terminated
+      }
     }
   }
 });
@@ -224,3 +225,36 @@ app.on('activate', () => {
     createWindow();
   }
 });
+
+// IPC main handlers for download directory management
+ipcMain.handle('select-directory', async (event, defaultPath) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: defaultPath || undefined
+  });
+  if (result.canceled) {
+    return null;
+  }
+  return result.filePaths[0];
+});
+
+ipcMain.handle('show-save-dialog', async (event, options) => {
+  const result = await dialog.showSaveDialog(mainWindow, options);
+  if (result.canceled) {
+    return null;
+  }
+  return result.filePath;
+});
+
+ipcMain.handle('open-directory', async (event, dirPath) => {
+  try {
+    if (fs.existsSync(dirPath)) {
+      await shell.openPath(dirPath);
+      return true;
+    }
+  } catch (e) {
+    console.error('Error opening directory:', e);
+  }
+  return false;
+});
+

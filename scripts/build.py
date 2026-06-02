@@ -75,6 +75,25 @@ def main():
     print(f"[*] Copying {src_exe} to {dst_exe}...")
     shutil.copy2(src_exe, dst_exe)
     
+    # Copy ffmpeg and ffprobe binaries
+    ffmpeg_exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    ffprobe_exe = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
+    
+    ffmpeg_src = shutil.which("ffmpeg")
+    ffprobe_src = shutil.which("ffprobe")
+    
+    if ffmpeg_src:
+        print(f"[*] Copying bundled ffmpeg from {ffmpeg_src}...")
+        shutil.copy2(ffmpeg_src, os.path.join(electron_resources, ffmpeg_exe))
+    else:
+        print("[-] Warning: ffmpeg not found in PATH, not bundling!")
+        
+    if ffprobe_src:
+        print(f"[*] Copying bundled ffprobe from {ffprobe_src}...")
+        shutil.copy2(ffprobe_src, os.path.join(electron_resources, ffprobe_exe))
+    else:
+        print("[-] Warning: ffprobe not found in PATH, not bundling!")
+    
     # Copy frontend static files
     src_out = os.path.join(frontend_dir, "out")
     print(f"[*] Copying {src_out} to {electron_frontend}...")

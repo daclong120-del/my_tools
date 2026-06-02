@@ -8,7 +8,10 @@ class Settings:
     HOST: str = os.getenv("SOCIALPETA_DOWNLOADER_HOST", "127.0.0.1")
     
     # Resolve project root dynamically
-    if getattr(sys, 'frozen', False):
+    user_data_path = os.getenv("USER_DATA_PATH")
+    if user_data_path:
+        ROOT_DIR = user_data_path
+    elif getattr(sys, 'frozen', False):
         # Running as compiled binary (sys.executable is path to api.exe)
         # We put data folder in the directory of the executable
         ROOT_DIR = os.path.dirname(sys.executable)
@@ -26,6 +29,24 @@ class Settings:
         "data",
         "playwright_session"
     ))
+
+    @property
+    def FFMPEG_PATH(self) -> str:
+        if getattr(sys, 'frozen', False):
+            exe_dir = os.path.dirname(sys.executable)
+            local_path = os.path.join(exe_dir, "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+            if os.path.exists(local_path):
+                return local_path
+        return "ffmpeg"
+
+    @property
+    def FFPROBE_PATH(self) -> str:
+        if getattr(sys, 'frozen', False):
+            exe_dir = os.path.dirname(sys.executable)
+            local_path = os.path.join(exe_dir, "ffprobe.exe" if sys.platform == "win32" else "ffprobe")
+            if os.path.exists(local_path):
+                return local_path
+        return "ffprobe"
 
 settings = Settings()
 

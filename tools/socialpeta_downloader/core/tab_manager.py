@@ -158,8 +158,75 @@ class TabManagerMixin:
 
     def run_tab_scraper(self, tab_index: int, total_pages: int, port: Optional[int] = None):
         import queue
+        import re
+        from datetime import datetime
+
         tab_id = self.tab_states[tab_index]["tab_id"]
+        url = self.tab_states[tab_index].get("url", "")
+        title = self.tab_states[tab_index].get("title", "")
+        
+        # Resolve ad network
+        url_lower = url.lower()
+        title_lower = title.lower()
+        if "tiktok" in title_lower or "tiktok" in url_lower:
+            ad_network = "TikTok"
+        elif "facebook" in title_lower or "facebook" in url_lower or "fb" in url_lower:
+            ad_network = "Facebook"
+        elif "google" in title_lower or "google" in url_lower or "gdn" in url_lower:
+            ad_network = "Google"
+        elif "youtube" in title_lower or "youtube" in url_lower:
+            ad_network = "YouTube"
+        else:
+            ad_network = "SocialPeta"
+
+        # Resolve app name
+        app_name = "UnknownApp"
+        if title:
+            parts = re.split(r'[-|_|•]', title)
+            cleaned_parts = []
+            for part in parts:
+                p = part.strip()
+                p_lower = p.lower()
+                if any(kw in p_lower for kw in [
+                    "socialpeta", "guangdada", "ad search", "creative", "tải", "downloader", 
+                    "tiktok", "facebook", "google", "youtube", "quảng cáo", "tìm kiếm"
+                ]):
+                    continue
+                if p:
+                    cleaned_parts.append(p)
+            if cleaned_parts:
+                app_name = cleaned_parts[0]
+            else:
+                cleaned = title
+                for kw in ["SocialPeta", "Guangdada", "TikTok Ad Search", "Facebook Ad Search", "Ad Search", "Search", "TikTok", "Facebook", "Google", "YouTube"]:
+                    cleaned = re.sub(re.escape(kw), "", cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'[\s\-_|•]+', ' ', cleaned).strip()
+                if cleaned:
+                    app_name = cleaned
+
+        # Date string YYYYMMDD
+        date_str = datetime.now().strftime("%Y%m%d")
+
+        # Sanitize for safe path name
+        ad_network_clean = re.sub(r'[^\w\-]', '', ad_network)
+        app_name_clean = re.sub(r'[^\w\-]', '', app_name)
+        
+        base_name = f"{ad_network_clean}_{app_name_clean}_{date_str}"
+        subfolder = base_name
+        
+        # Deduplication check against active tabs and existing folders
+        existing_subfolders = [t.get("subfolder") for t in self.tab_states.values() if t.get("subfolder")]
+        counter = 2
+        while os.path.exists(os.path.join(self.download_dir, subfolder)) or subfolder in existing_subfolders:
+            subfolder = f"{base_name}_{counter}"
+            counter += 1
+
+        self.tab_states[tab_index]["subfolder"] = subfolder
+        self.tab_states[tab_index]["subfolder_path"] = os.path.join(self.download_dir, subfolder)
+        os.makedirs(self.tab_states[tab_index]["subfolder_path"], exist_ok=True)
+
         print(f"[*] Thread Scraper cho Tab {tab_index} bat dau (Pages: {total_pages})...")
+        print(f"[*] Tab {tab_index} duoc gan thu muc: {self.tab_states[tab_index]['subfolder_path']}")
         
         self.tab_states[tab_index]["status"] = "running"
         self.tab_states[tab_index]["target_pages"] = total_pages
