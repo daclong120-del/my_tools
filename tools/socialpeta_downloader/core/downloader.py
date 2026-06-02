@@ -155,6 +155,21 @@ class DownloaderService:
                         self.context.utils_service._save_item_state(item)
                         self.context.session_service.append_to_csv(item)
                         continue
+                
+                download_mode = getattr(self.context, "download_mode", "all")
+                if download_mode == "image":
+                    if media_type not in ("image", "youtube_thumbnail"):
+                        self.context.utils_service.log("info", f"Ad {ad_id}: Bỏ qua do chế độ Chỉ tải ảnh.")
+                        item["status"] = "failed"
+                        self.context.utils_service._save_item_state(item)
+                        continue
+                elif download_mode == "youtube":
+                    if media_type not in ("youtube_video", "youtube_click_required"):
+                        self.context.utils_service.log("info", f"Ad {ad_id}: Bỏ qua do chế độ Chỉ tải video YouTube.")
+                        item["status"] = "failed"
+                        self.context.utils_service._save_item_state(item)
+                        continue
+                        
                 try:
                     total, used, free = shutil.disk_usage(self.context.download_dir)
                     if free < 100 * 1024 * 1024:

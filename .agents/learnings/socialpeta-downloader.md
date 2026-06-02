@@ -37,6 +37,11 @@
 - **Chi tiết**: Biến đổi thư mục tải xuống thành một Workspace độc lập hoàn chỉnh chứa: `db.sqlite3` (lưu trạng thái phiên cào và lịch sử tải), `download_info.csv` (lịch sử tải được đồng bộ), `duplicate_audit.csv` (lịch sử lọc trùng). Việc lưu trữ `saved_path` dưới dạng đường dẫn tương đối (Relative Path) giúp toàn bộ Workspace có tính di động tuyệt đối khi di chuyển sang ổ đĩa hoặc máy khác mà không bị hỏng liên kết tệp tin.
 - **Files liên quan**: `tools/socialpeta_downloader/config.py`, `tools/socialpeta_downloader/core/utils.py`, `tools/socialpeta_downloader/core/session.py`
 
+### CLI V2 Terminal User Interface (TUI)
+- **Ngày**: 2026-06-02
+- **Chi tiết**: Thiết kế giao diện CLI tương tác (TUI) bằng `InquirerPy` (sử dụng phím mũi tên) kết hợp Live Dashboard của `rich` để hiển thị trực quan trạng thái tải/cào đa luồng. Hỗ trợ cơ chế dừng khẩn cấp bằng phím tắt `Ctrl + Q` để ngắt luồng workers an toàn và dọn dẹp các tệp tạm trên đĩa.
+- **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/cli.py`
+
 ---
 
 ## Bugs & Solutions
@@ -164,7 +169,7 @@
 - **Ngày**: 2026-06-02
 - **Vấn đề**: Nhiều khối `try...except` trong codebase sử dụng `except Exception: pass` hoặc chỉ in ra console bằng `print()` mà không lưu lại traceback đầy đủ.
 - **Root cause**: Thiếu cơ chế ghi log traceback chi tiết cho các lỗi phát sinh trong luồng xử lý bất đồng bộ hoặc background workers.
-- **Fix**: Quét toàn bộ codebase và thay thế các print hoặc pass không an toàn bằng `import traceback` và ghi log chi tiết thông qua `self.log("error", ...)` hoặc `core.log("error", ...)` chứa `traceback.format_exc()`.
+- **Fix**: Quét toàn bộ codebase và thay thế các print hoặc pass không an sau bằng `import traceback` và ghi log chi tiết thông qua `self.log("error", ...)` hoặc `core.log("error", ...)` chứa `traceback.format_exc()`.
 - **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`, `tools/socialpeta_downloader/core/__init__.py`, `tools/socialpeta_downloader/core/chrome.py`, `tools/socialpeta_downloader/core/deduplication.py`, `tools/socialpeta_downloader/core/session.py`, `tools/socialpeta_downloader/core/downloader.py`, `tools/socialpeta_downloader/core/sniffer.py`, `tools/socialpeta_downloader/core/youtube.py`, `tools/socialpeta_downloader/api/routes.py`, `tools/socialpeta_downloader/sys_monitor.py`
 
 ### Lỗi âm số lượng hàng chờ (Negative Pending Count) do lệch total_sniffed & YouTube extraction fail
@@ -202,6 +207,34 @@
 - **Fix**: Thêm import `from socialpeta_downloader.config import settings` ở đầu file `session.py`.
 - **Files liên quan**: `tools/socialpeta_downloader/core/session.py`
 
+### Lỗi biên dịch cú pháp trong file CMD/BAT (Windows) do bảng mã ký tự đặc biệt
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Khởi chạy `run.bat` bị lỗi cú pháp `') else (' is not recognized as an internal or external command` hoặc `'ủa'`... và tự đóng terminal ngay lập tức.
+- **Root cause**: Trình thông dịch CMD mặc định của Windows phân giải sai cấu trúc khối lệnh `if/else` khi gặp các ký tự tiếng Việt có dấu trong câu lệnh `echo` hoặc comment.
+- **Fix**: Loại bỏ hoàn toàn các ký tự tiếng Việt có dấu trong file `run.bat` (chuyển sang dạng không dấu chuẩn ASCII).
+- **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/run.bat`
+
+### Lỗi thiếu thư viện Tcl/Tk của Tkinter trong môi trường ảo (.venv)
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Khi mở cửa sổ chọn Folder Explorer bằng `tkinter` trên Windows, chương trình báo lỗi thiếu tệp cấu hình `init.tcl` (`Can't find a usable init.tcl`).
+- **Root cause**: Trình khởi tạo môi trường ảo Python trên Windows không tự động sao chép hoặc liên kết chính xác thư mục thư viện Tcl từ cài đặt gốc.
+- **Fix**: Sao chép thư mục `tcl` từ Python gốc trên hệ thống (ví dụ: `Python313/tcl`) trực tiếp vào thư mục gốc của `.venv` của dự án (`.venv/tcl`).
+- **Files liên quan**: N/A
+
+### Lỗi bỏ sót tải video YouTube có thời lượng 0s
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Video YouTube có thông số duration trong header bằng `0` bị bộ lọc sniffer nhận diện sai thành định dạng hình ảnh và bỏ qua không tải.
+- **Root cause**: Logic phân loại kiểu file dựa trên `duration` coi duration = 0 là ảnh.
+- **Fix**: Cập nhật logic phân loại, ưu tiên kiểm tra sự hiện diện của URL YouTube hợp lệ để gán loại là `youtube_video` trước khi dựa vào thông số duration.
+- **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`
+
+### ValueError 'N/A' khi gọi ffprobe trên hình ảnh trong lịch sử lọc trùng
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Chương trình in ra cảnh báo lỗi `ValueError: could not convert string to float: 'N/A'` liên tục khi chạy lọc trùng.
+- **Root cause**: `download_history` lưu cả lịch sử hình ảnh và video. Khi lọc trùng, chương trình chạy qua tất cả file đã tải, trong đó file ảnh không có duration khiến `ffprobe` trả về `N/A`.
+- **Fix**: Lỗi đã được xử lý dự phòng bằng khối `try...except` trả về giá trị `-1.0` an toàn nên không gây sập ứng dụng.
+- **Files liên quan**: `tools/socialpeta_downloader/core/deduplication.py`
+
 ---
 
 ## How-To
@@ -223,6 +256,14 @@
   2. Chạy script đóng gói tại thư mục gốc: `.venv\Scripts\python.exe scripts/build.py`
   3. Script sẽ tự động build Next.js tĩnh, biên dịch Python sang `api.exe` (hoặc `api` trên macOS/Linux) thông qua PyInstaller, đồng bộ tài nguyên vào cấu trúc Electron, và tạo bộ cài đặt NSIS duy nhất tại `electron/dist/`.
 - **Files liên quan**: `scripts/build.py`, `electron/package.json`
+
+### Cách khởi chạy nhanh CLI V2 trên Windows
+- **Ngày**: 2026-06-02
+- **Bước thực hiện**:
+  1. Click đúp trực tiếp vào file: `tools/socialpeta_downloader/cli/cli_v2/run.bat`.
+  2. Hoặc từ thư mục gốc của dự án trong CMD/PowerShell, chạy lệnh:
+     `.\tools\socialpeta_downloader\cli\cli_v2\run.bat`
+- **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/run.bat`
 
 ---
 
@@ -283,3 +324,8 @@
 - **Ngày**: 2026-06-02
 - **Chi tiết**: Thực hiện đồng bộ hóa một chiều thread-safe từ SQLite sang CSV (`download_info.csv` và `duplicate_audit.csv`) dưới khối khóa `history_lock` và SQLite WAL mode, đảm bảo file CSV luôn nhất quán, cập nhật trực quan cho người dùng mà không gây crash do xung đột ghi đồng thời từ nhiều worker.
 - **Files liên quan**: `tools/socialpeta_downloader/core/session.py`
+
+### In-Memory Configuration Override
+- **Ngày**: 2026-06-02
+- **Chi tiết**: Sử dụng một đối tượng trạng thái ứng dụng (`AppState` hoặc local variables) để lưu trữ tạm thời các thiết lập cổng debug, thư mục lưu trữ và số luồng xử lý do người dùng ghi đè thủ công tại CLI. Truyền các giá trị động này trực tiếp vào các service thay vì ghi đè biến cấu hình toàn cục, duy trì cấu trúc cấu hình gốc sạch sẽ.
+- **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/cli.py`

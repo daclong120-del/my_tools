@@ -598,10 +598,7 @@ class UtilsService:
                 (video_url and ("youtube" in video_url.lower() or "youtu.be" in video_url.lower()))
             )
             if is_real_youtube_link:
-                if duration is not None and duration > 0:
-                    media_type = "youtube_video"
-                else:
-                    media_type = "youtube_thumbnail"
+                media_type = "youtube_video"
             elif not youtube_url and video_url and not ("youtube" in video_url.lower() or "youtu.be" in video_url.lower()):
                 media_type = "video"
             else:

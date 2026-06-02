@@ -59,6 +59,14 @@ class SnifferService:
                     if self.context.utils_service._is_ad_already_downloading_or_done(parsed["ad_id"]):
                         continue
                 
+                download_mode = getattr(self.context, "download_mode", "all")
+                if download_mode == "image":
+                    if parsed["media_type"] not in ("image", "youtube_thumbnail"):
+                        continue
+                elif download_mode == "youtube":
+                    if parsed["media_type"] not in ("youtube_video", "youtube_click_required"):
+                        continue
+                
                 if parsed["media_type"] == "youtube_click_required":
                     self.context.utils_service._save_item_state(parsed)
                     self.context.tab_youtube_queues[tab_index].put(parsed)
