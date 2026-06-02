@@ -92,6 +92,24 @@ def read_root():
         "status_url": "/api/v1/socialpeta/status"
     }
 
+@app.get("/health")
+def health_check():
+    yt_dlp_status = "missing"
+    yt_dlp_version = None
+    try:
+        import yt_dlp
+        yt_dlp_status = "ok"
+        yt_dlp_version = getattr(yt_dlp, "version", None)
+        if yt_dlp_version:
+            yt_dlp_version = getattr(yt_dlp_version, "__version__", str(yt_dlp_version))
+    except ImportError:
+        pass
+    return {
+        "status": "ready",
+        "yt_dlp": yt_dlp_status,
+        "yt_dlp_version": yt_dlp_version
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=settings.HOST, port=settings.API_PORT)

@@ -46,6 +46,8 @@ def run_login(port: Optional[int] = None):
             message="Khởi chạy Chrome debug thành công." if success else "Không thể khởi chạy Chrome hoặc hết thời gian chờ."
         )
     except Exception as e:
+        import traceback
+        core.log("error", f"Lỗi khởi chạy Chrome: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Lỗi khởi chạy Chrome: {str(e)}")
 
 @router.get("/tabs", response_model=List[TabInfo])
@@ -58,6 +60,8 @@ def get_tabs(port: Optional[int] = None):
         tabs = core.detect_tabs(port_val)
         return [TabInfo(**t) for t in tabs]
     except Exception as e:
+        import traceback
+        core.log("error", f"Lỗi khi dò quét các tab: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Lỗi khi dò quét các tab: {str(e)}")
 
 @router.post("/start")
@@ -101,7 +105,7 @@ def start_downloads(request: StartDownloadRequest):
         raise he
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        core.log("error", f"Lỗi khi bắt đầu tải: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Lỗi khi bắt đầu tải: {str(e)}")
 
 @router.post("/stop")
@@ -133,6 +137,8 @@ def stop_downloads(request: StopDownloadRequest):
             core.log("warning", f"Đã gửi tín hiệu dừng tới tất cả {count} tab đang quét.")
             return {"status": "success", "message": f"Đã dừng tất cả {count} tab."}
     except Exception as e:
+        import traceback
+        core.log("error", f"Lỗi khi dừng tải: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Lỗi khi dừng tải: {str(e)}")
 
 @router.get("/stats")
@@ -180,6 +186,38 @@ def update_config(data: ConfigUpdate):
     if len(download_dir) > 150:
         raise HTTPException(status_code=400, detail="Đường dẫn quá dài (tối đa 150 ký tự) để đảm bảo an toàn khi tạo thư mục con.")
     
+    # Chặn ký tự điều khiển (ASCII 0-31)
+    if any(ord(c) < 32 for c in download_dir):
+        raise HTTPException(status_code=400, detail="Đường dẫn chứa ký tự không hợp lệ.")
+    
+    # Chặn network share (UNC paths)
+    if download_dir.startswith("\\\\") or download_dir.startswith("//"):
+        raise HTTPException(status_code=400, detail="Không hỗ trợ đường dẫn mạng (network share).")
+    
+    # Chặn path traversal trước khi chuẩn hóa
+    if ".." in download_dir:
+        raise HTTPException(status_code=400, detail="Đường dẫn chứa thành phần không hợp lệ (..).")
+    
+    # Yêu cầu đường dẫn tuyệt đối (không cho phép đường dẫn tương đối)
+    if not os.path.isabs(download_dir):
+        raise HTTPException(status_code=400, detail="Đường dẫn phải là đường dẫn tuyệt đối (ví dụ: D:\\Downloads).")
+    
+    # Chuẩn hóa đường dẫn
+    download_dir = os.path.realpath(os.path.abspath(download_dir))
+    
+    # Chặn path traversal (.. sau khi chuẩn hóa vẫn nằm ngoài ổ đĩa gốc)
+    if ".." in download_dir:
+        raise HTTPException(status_code=400, detail="Đường dẫn chứa thành phần không hợp lệ (..).")
+    
+    # Chỉ cho phép đường dẫn cục bộ trên Windows (ổ đĩa X:\)
+    import re
+    if os.name == "nt":
+        if not re.match(r'^[A-Za-z]:\\', download_dir):
+            raise HTTPException(status_code=400, detail="Đường dẫn phải nằm trên ổ đĩa cục bộ (ví dụ: D:\\Downloads).")
+    else:
+        if not download_dir.startswith("/"):
+            raise HTTPException(status_code=400, detail="Đường dẫn phải là đường dẫn tuyệt đối.")
+    
     try:
         os.makedirs(download_dir, exist_ok=True)
         test_file = os.path.join(download_dir, ".write_test")
@@ -187,6 +225,8 @@ def update_config(data: ConfigUpdate):
             f.write("test")
         os.remove(test_file)
     except Exception as e:
+        import traceback
+        core.log("error", f"Không có quyền ghi vào thư mục config: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=f"Không có quyền ghi vào thư mục: {str(e)}")
         
     core.save_config(download_dir)
@@ -209,6 +249,8 @@ def open_folder():
             subprocess.run(["xdg-open", path])
         return {"status": "success"}
     except Exception as e:
+        import traceback
+        core.log("error", f"Không thể mở thư mục: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Không thể mở thư mục: {str(e)}")
 
 def compile_csv_data(items: list[dict]) -> str:
@@ -218,13 +260,15 @@ def compile_csv_data(items: list[dict]) -> str:
     output.write('\ufeff')
     
     fieldnames = [
-        "app_name", "platform", "area", "media_type", 
+        "video_name", "saved_path", "app_name", "platform", "area", "media_type", 
         "file_size", "download_time", "video_url", "youtube_url", "ad_url"
     ]
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
     for item in items:
         writer.writerow({
+            "video_name": item.get("video_name", ""),
+            "saved_path": item.get("saved_path", ""),
             "app_name": item.get("app_name", "AdVideo"),
             "platform": item.get("platform", "Facebook"),
             "area": item.get("area", "Vietnam"),
@@ -236,6 +280,7 @@ def compile_csv_data(items: list[dict]) -> str:
             "ad_url": item.get("video_url") or item.get("youtube_url") or ""
         })
     return output.getvalue()
+
 
 @router.post("/export_csv_to_path")
 def export_csv_to_path(path: str):
@@ -249,6 +294,8 @@ def export_csv_to_path(path: str):
             f.write(csv_content)
         return {"status": "success", "path": path}
     except Exception as e:
+        import traceback
+        core.log("error", f"Lỗi xuất báo cáo CSV: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Lỗi xuất báo cáo CSV: {str(e)}")
 
 @router.get("/report")
@@ -259,6 +306,8 @@ def get_report():
     try:
         return core.scan_json_metadata_recursively()
     except Exception as e:
+        import traceback
+        core.log("error", f"Lỗi quét dữ liệu báo cáo: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Lỗi quét dữ liệu báo cáo: {str(e)}")
 
 @router.get("/export")
@@ -271,6 +320,8 @@ def export_report():
         csv_content = compile_csv_data(items)
         content_bytes = csv_content.encode('utf-8-sig')
     except Exception as e:
+        import traceback
+        core.log("error", f"Lỗi xuất file báo cáo: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Lỗi xuất file báo cáo: {str(e)}")
             
     from fastapi import Response
@@ -329,7 +380,8 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         core.log("info", "Frontend đã ngắt kết nối WebSocket.")
     except Exception as e:
-        print(f"[-] WebSocket error: {e}")
+        import traceback
+        core.log("error", f"[-] WebSocket error: {e}\n{traceback.format_exc()}")
     finally:
         with core.log_subscribers_lock:
             if client_queue in core.log_subscribers:
@@ -375,5 +427,7 @@ def download_video(request: DownloadRequest):
                 message="Tải video quảng cáo thành công." if success else f"Tải thất bại: {result.get('error')}"
             )
     except Exception as e:
+        import traceback
+        core.log("error", f"Lỗi hệ thống khi tải video: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Lỗi hệ thống khi tải video: {str(e)}")
 

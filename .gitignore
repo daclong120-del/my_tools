@@ -246,5 +246,3 @@ frontends/socialpeta_downloader/.next/
 *.avi
 *.mov
 
-# Agent AI
-.agents/skills/

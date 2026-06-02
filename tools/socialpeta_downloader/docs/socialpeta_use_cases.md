@@ -74,7 +74,14 @@ Filter thread  × 1      →  singleton, xử lý output từ tất cả tab
 
 ---
 
-## Cấu trúc file dữ liệu
+## Cấu trúc file dữ liệu & Workspace
+
+### `db.sqlite3` (Database SQLite động)
+
+Tệp database lưu trữ lịch sử tải xuống và siêu dữ liệu của ứng dụng.
+- **Vị trí lưu trữ:** Luôn nằm động trực tiếp tại thư mục tải xuống hiện tại được chọn (`settings.DOWNLOAD_DIR`).
+- **Đường dẫn tệp tin (`saved_path`):** Đường dẫn file tải về lưu trong DB phải là đường dẫn tương đối (Relative Path) tính từ `DOWNLOAD_DIR` (ví dụ: `App_Name/video.mp4` thay vì `D:\Downloads\App_Name\video.mp4`). Điều này đảm bảo tính di động khi người dùng sao chép hoặc di chuyển toàn bộ thư mục.
+- **Khi đổi thư mục tải xuống:** Hệ thống ngắt kết nối database cũ, mở/tạo tệp `db.sqlite3` mới tại thư mục mới và tự động khởi tạo lại cấu trúc bảng.
 
 ### `download_temp.json` (per tab, trong `.temp/tabN/`)
 
@@ -88,9 +95,9 @@ Lưu danh sách link cần tải và trạng thái xử lý.
 - `failed` — lỗi sau N lần retry
 - `expired` — CDN URL hết hạn
 
-### `download_info.csv` (output chung)
+### `download_info.csv` (output báo cáo)
 
-File tổng hợp metadata tất cả media đã tải thành công.
+File tổng hợp metadata tất cả media đã tải thành công, được tự động xuất/ghi đè từ SQLite ra thư mục tải xuống gốc (`DOWNLOAD_DIR`).
 
 **Các field đầy đủ:**
 
@@ -118,7 +125,7 @@ File tổng hợp metadata tất cả media đã tải thành công.
 | `duration`                     | Thời lượng video (giây), `0` nếu YouTube 0s, trống nếu là ảnh |
 | `download_time`                | Timestamp tải về (`YYYY-MM-DD HH:MM:SS`)                      |
 
-**Nguyên tắc:** Không để trống bất kỳ field metadata nào mà API đã trả về. Chỉ để trống các field kỹ thuật không áp dụng cho loại media đó.
+**Nguyên tắc:** Không để trống bất kỳ field metadata nào mà API đã trả về. Chỉ để trống các field kỹ thuật không áp dụng cho loại media đó. File CSV phải sử dụng mã hóa UTF-8 có BOM để hiển thị chính xác các ký tự đặc biệt khi mở bằng Microsoft Excel.
 
 ---
 
@@ -556,6 +563,8 @@ User lọc theo: `platform`, `area`, `app_name`, khoảng `deployment_time`, `me
 | UC-O03 | Lọc CSV theo tiêu chí             | Báo cáo    |
 
 UC bổ sung:
+| UC-F01 | Chọn thư mục lưu file qua File Explorer | File/Workspace |
+| UC-F02 | Đồng bộ Workspace và SQLite             | File/Workspace |
 
 ---
 
@@ -570,6 +579,7 @@ UC bổ sung:
 3. Chương trình lưu đường dẫn vào file config (`config.json` hoặc tương đương).
 4. Hiển thị xác nhận: `Thư mục lưu: D:\Downloads\SocialPeta`
 5. Tất cả file tải về từ lúc này được lưu vào thư mục đó.
+6. Hệ thống thực hiện ngắt kết nối database cũ và gọi `UC-F02` để thiết lập cơ sở dữ liệu mới tại thư mục vừa được chọn.
 
 **Ngoại lệ:**
 
@@ -577,6 +587,25 @@ UC bổ sung:
 - `UC-F01b` Thư mục được chọn không có quyền ghi → cảnh báo ngay, mở lại hộp thoại
 - `UC-F01c` Đường dẫn quá dài (Windows giới hạn 260 ký tự) → cảnh báo, gợi ý chọn đường dẫn ngắn hơn
 - `UC-F01d` Ổ đĩa được chọn không đủ dung lượng → cảnh báo kèm dung lượng còn trống, vẫn cho phép chọn
+
+---
+
+## UC-F02 — Đồng bộ Workspace và cơ sở dữ liệu SQLite
+
+**Trigger:** Gọi sau khi `UC-F01` hoàn tất đổi thư mục thành công.
+
+**Luồng chính:**
+
+1. Hệ thống tìm kiếm tệp `db.sqlite3` trong thư mục tải xuống mới:
+   - *Nếu chưa tồn tại:* Tạo mới tệp `db.sqlite3` tại đó và chạy migration để tạo các bảng dữ liệu.
+   - *Nếu đã tồn tại:* Kết nối tới tệp database cũ này để khôi phục lịch sử tải xuống.
+2. Cập nhật cache lưu trữ các tệp đã tải (vân tay dHash, MD5) từ database mới để phục vụ tính năng lọc trùng lặp.
+3. Xuất file `download_info.csv` cập nhật tại thư mục mới nếu database chứa lịch sử tải.
+4. Trả về trạng thái sẵn sàng làm việc cho giao diện.
+
+**Ngoại lệ:**
+- `UC-F02a` File database bị hỏng (corrupt) → Đổi tên file hỏng thành `.corrupt` và khởi tạo lại database mới trống, ghi log cảnh báo.
+- `UC-F02b` Lỗi lock file do thư mục nằm trên USB hoặc NAS (không ghi được WAL mode) → Fallback SQLite sang chế độ ghi đồng bộ không cần WAL.
 
 ---
 

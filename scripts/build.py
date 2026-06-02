@@ -26,7 +26,8 @@ def main():
         "uvicorn.protocols", "uvicorn.protocols.http", "uvicorn.protocols.http.auto",
         "uvicorn.protocols.websockets", "uvicorn.protocols.websockets.auto",
         "uvicorn.lifespan", "uvicorn.lifespan.on", "uvicorn.lifespan.off",
-        "anyio", "fastapi", "pydantic", "typing_extensions", "websockets"
+        "anyio", "fastapi", "pydantic", "typing_extensions", "websockets",
+        "yt_dlp"
     ]
     
     if sys.platform == "win32":
@@ -79,20 +80,39 @@ def main():
     ffmpeg_exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
     ffprobe_exe = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
     
-    ffmpeg_src = shutil.which("ffmpeg")
-    ffprobe_src = shutil.which("ffprobe")
+    static_bin_dir = os.path.join(root_dir, "resources", "bin")
+    ffmpeg_static = os.path.join(static_bin_dir, ffmpeg_exe)
+    ffprobe_static = os.path.join(static_bin_dir, ffprobe_exe)
+    
+    ffmpeg_src = None
+    if os.path.exists(ffmpeg_static):
+        ffmpeg_src = ffmpeg_static
+        print("[+] Using FFmpeg from resources/bin")
+    else:
+        ffmpeg_src = shutil.which("ffmpeg")
+        if ffmpeg_src:
+            print(f"[+] Using FFmpeg from PATH: {ffmpeg_src}")
+            
+    ffprobe_src = None
+    if os.path.exists(ffprobe_static):
+        ffprobe_src = ffprobe_static
+        print("[+] Using FFprobe from resources/bin")
+    else:
+        ffprobe_src = shutil.which("ffprobe")
+        if ffprobe_src:
+            print(f"[+] Using FFprobe from PATH: {ffprobe_src}")
     
     if ffmpeg_src:
         print(f"[*] Copying bundled ffmpeg from {ffmpeg_src}...")
         shutil.copy2(ffmpeg_src, os.path.join(electron_resources, ffmpeg_exe))
     else:
-        print("[-] Warning: ffmpeg not found in PATH, not bundling!")
+        print("[-] Warning: ffmpeg not found in resources/bin or PATH, not bundling!")
         
     if ffprobe_src:
         print(f"[*] Copying bundled ffprobe from {ffprobe_src}...")
         shutil.copy2(ffprobe_src, os.path.join(electron_resources, ffprobe_exe))
     else:
-        print("[-] Warning: ffprobe not found in PATH, not bundling!")
+        print("[-] Warning: ffprobe not found in resources/bin or PATH, not bundling!")
     
     # Copy frontend static files
     src_out = os.path.join(frontend_dir, "out")

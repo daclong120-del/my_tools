@@ -10,8 +10,12 @@ import subprocess
 from typing import Optional
 from playwright.sync_api import sync_playwright
 from socialpeta_downloader.config import settings
+from socialpeta_downloader.core.protocols import IEngineContext
 
-class ChromeMixin:
+class ChromeService:
+    def __init__(self, context: Optional[IEngineContext] = None):
+        self.context = context
+
     def ensure_chrome_debug_port(self, port: Optional[int] = None) -> bool:
         """
         Check if port is already open. If not, try to launch a local instance of Google
@@ -59,7 +63,7 @@ class ChromeMixin:
             return False
             
         # Launch with custom user data directory to run side-by-side with user's main Chrome without blocking
-        chrome_profile_dir = os.path.join(settings.ROOT_DIR, "data", "chrome_debug_profile")
+        chrome_profile_dir = os.path.join(settings.DATA_DIR, "chrome_debug_profile")
         os.makedirs(chrome_profile_dir, exist_ok=True)
         cmd = [
             chrome_path,
@@ -88,13 +92,18 @@ class ChromeMixin:
             print("[-] Timeout waiting for Chrome debug port to open.")
             return False
         except Exception as e:
-            print(f"[-] Failed to launch Chrome: {e}")
+            if self.context:
+                import traceback
+                self.context.log("error", f"[-] Failed to launch Chrome: {e}\n{traceback.format_exc()}")
+            else:
+                import traceback
+                print(f"[-] Failed to launch Chrome: {e}\n{traceback.format_exc()}")
             return False
 
     def _is_chrome_cdp_active(self, port: int) -> bool:
         import requests
         try:
-            resp = requests.get(f"http://127.0.0.1:{port}/json/version", timeout=0.5)
+            resp = requests.get(f"http://127.0.0.1:{port}/json/version", timeout=2.0)
             if resp.status_code == 200:
                 return True
         except Exception:

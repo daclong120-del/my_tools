@@ -7,3 +7,4 @@ python-multipart
 playwright>=1.40.0
 psutil>=5.9.0
 websockets>=12.0
+yt-dlp>=2024.0

@@ -32,6 +32,11 @@
 - **Chi tiết**: Thay vì khởi động và đóng các instance Playwright CDP liên tục để dò tìm danh sách tab (gây tốn tài nguyên và dễ xung đột kết nối), backend truy vấn trực tiếp HTTP endpoint `/json/list` của Chrome trên cổng debug. Cách này chạy cực nhanh (dưới 5ms), tốn 0% CPU bổ sung và không tạo subprocess.
 - **Files liên quan**: `tools/socialpeta_downloader/core/tab_manager.py`
 
+### Self-Contained Download Workspaces
+- **Ngày**: 2026-06-02
+- **Chi tiết**: Biến đổi thư mục tải xuống thành một Workspace độc lập hoàn chỉnh chứa: `db.sqlite3` (lưu trạng thái phiên cào và lịch sử tải), `download_info.csv` (lịch sử tải được đồng bộ), `duplicate_audit.csv` (lịch sử lọc trùng). Việc lưu trữ `saved_path` dưới dạng đường dẫn tương đối (Relative Path) giúp toàn bộ Workspace có tính di động tuyệt đối khi di chuyển sang ổ đĩa hoặc máy khác mà không bị hỏng liên kết tệp tin.
+- **Files liên quan**: `tools/socialpeta_downloader/config.py`, `tools/socialpeta_downloader/core/utils.py`, `tools/socialpeta_downloader/core/session.py`
+
 ---
 
 ## Bugs & Solutions
@@ -155,6 +160,48 @@
 - **Fix**: (1) Thay thế hoàn toàn Playwright trong `detect_tabs` bằng truy cập HTTP direct `/json/list`, (2) Loại bỏ listener `response` của `page` trong khối `finally` trước khi gọi `browser.close()` để ngắt tất cả các event ghi dữ liệu qua pipe đang chuẩn bị đóng, (3) Đơn giản hóa `check_login_status` chỉ kiểm tra active port thay vì tạo CDP.
 - **Files liên quan**: `tools/socialpeta_downloader/core/tab_manager.py`, `tools/socialpeta_downloader/core/chrome.py`
 
+### Nuốt lỗi hệ thống âm thầm (System errors swallowed silently without logging)
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Nhiều khối `try...except` trong codebase sử dụng `except Exception: pass` hoặc chỉ in ra console bằng `print()` mà không lưu lại traceback đầy đủ.
+- **Root cause**: Thiếu cơ chế ghi log traceback chi tiết cho các lỗi phát sinh trong luồng xử lý bất đồng bộ hoặc background workers.
+- **Fix**: Quét toàn bộ codebase và thay thế các print hoặc pass không an toàn bằng `import traceback` và ghi log chi tiết thông qua `self.log("error", ...)` hoặc `core.log("error", ...)` chứa `traceback.format_exc()`.
+- **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`, `tools/socialpeta_downloader/core/__init__.py`, `tools/socialpeta_downloader/core/chrome.py`, `tools/socialpeta_downloader/core/deduplication.py`, `tools/socialpeta_downloader/core/session.py`, `tools/socialpeta_downloader/core/downloader.py`, `tools/socialpeta_downloader/core/sniffer.py`, `tools/socialpeta_downloader/core/youtube.py`, `tools/socialpeta_downloader/api/routes.py`, `tools/socialpeta_downloader/sys_monitor.py`
+
+### Lỗi âm số lượng hàng chờ (Negative Pending Count) do lệch total_sniffed & YouTube extraction fail
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Số lượng hàng chờ (pending count) hiển thị số âm trên giao diện và sai lệch giữa các chỉ số thống kê.
+- **Root cause**: (1) Frontend tính toán pending bằng công thức thủ công `total_sniffed - done - failed - duplicate` thay vì dùng trực tiếp `stats.pending` của backend, (2) Backend không lưu trạng thái `'pending'` cho các quảng cáo YouTube phải click khi phát hiện (`youtube_click_required`), khiến khi quá trình click/trích xuất thất bại, `stats['failed']` tăng 1 nhưng `total_sniffed` không tăng, dẫn đến tổng số âm, (3) Tồn tại nhiều nơi tự tăng `total_sniffed` thủ công trong các file sniffer/youtube dẫn đến double-increment khi thành công.
+- **Fix**: (1) Đồng bộ hóa việc tăng `total_sniffed` duy nhất trong `_write_item_file` khi `old_status` là `None` (lần đầu tạo ad), loại bỏ tất cả các lệnh tăng `total_sniffed` thủ công khác, (2) Lưu trạng thái `"pending"` cho quảng cáo YouTube ngay khi đưa vào hàng đợi trích xuất, (3) Cập nhật frontend Next.js sử dụng trực tiếp `data.stats.pending` và `data.stats.downloading` từ API/WebSocket.
+- **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`, `tools/socialpeta_downloader/core/sniffer.py`, `tools/socialpeta_downloader/core/legacy_sniffer.py`, `tools/socialpeta_downloader/core/youtube.py`, `frontends/socialpeta_downloader/app/page.js`
+
+### App treo cứng ở luồng tải do Socket Read Timeout
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Luồng tải dừng lại ở log read timed out của requests CDN và treo cứng toàn bộ ứng dụng.
+- **Root cause**: Mặc định `requests.get` với `timeout=20` chỉ giới hạn thời gian kết nối/nhận headers. Khi tải qua `response.iter_content` ở dạng stream, socket đọc dữ liệu không có timeout và bị block vô hạn khi mạng chập chờn.
+- **Fix**: Thiết lập timeout trực tiếp lên socket đọc thô: `if response.raw and response.raw.connection: response.raw.connection.sock.settimeout(20.0)`.
+- **Files liên quan**: `tools/socialpeta_downloader/core/downloader.py`
+
+### Kẹt hàng đợi lọc trùng khi thiếu FFmpeg/FFprobe
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Video tải về thành công bị kẹt vĩnh viễn ở thư mục tạm `.temp` với tên hash, không bao giờ được lọc và di chuyển sang thư mục đích.
+- **Root cause**: Khi thiếu FFmpeg/FFprobe, hệ thống ném exception và thực hiện `return` thoát luồng hoàn toàn, làm cho hàng đợi `filter_queue` bị kẹt.
+- **Fix**: Sử dụng biến flag `ffmpeg_available` (mặc định bằng `True`). Khi check FFmpeg lỗi, ghi nhận log cảnh báo và gán `ffmpeg_available = False` thay vì thoát luồng. Nếu `ffmpeg_available` là `False`, thực hiện sao chép/di chuyển trực tiếp video sang thư mục đích (fallback).
+- **Files liên quan**: `tools/socialpeta_downloader/core/downloader.py`
+
+### Thiếu FFmpeg khi đóng gói trên máy build
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Trình đóng gói `build.py` không tìm thấy FFmpeg do máy build không cài đặt PATH.
+- **Root cause**: Script build chỉ tìm kiếm FFmpeg qua `shutil.which` trong biến môi trường PATH.
+- **Fix**: Cập nhật `build.py` ưu tiên tìm kiếm `ffmpeg.exe` và `ffprobe.exe` trong thư mục tĩnh dự án `resources/bin/` trước khi fallback tìm qua PATH.
+- **Files liên quan**: `scripts/build.py`
+
+### Lỗi NameError: name 'settings' is not defined trong migrate_old_data
+- **Ngày**: 2026-06-02
+- **Vấn đề**: Backend API bị crash khi khởi động do unhandled exception.
+- **Root cause**: Lời gọi `settings.DATA_DIR` trong `migrate_old_data` của `session.py` bị thiếu import cấu hình `settings` toàn cục.
+- **Fix**: Thêm import `from socialpeta_downloader.config import settings` ở đầu file `session.py`.
+- **Files liên quan**: `tools/socialpeta_downloader/core/session.py`
+
 ---
 
 ## How-To
@@ -231,3 +278,8 @@
 - **Ngày**: 2026-06-02
 - **Chi tiết**: Để tránh yêu cầu người dùng cuối phải cài đặt FFmpeg/FFprobe và cấu hình biến môi trường PATH thủ công, bộ cài đặt tự động tích hợp sẵn các file thực thi này. Script `build.py` sẽ quét tìm `ffmpeg` và `ffprobe` trên máy build (`shutil.which`), sao chép chúng vào thư mục `electron/resources/`. Cấu hình `package.json` (phần `extraResources`) sẽ đóng gói chúng vào app. Đồng thời, code backend tự động trỏ đến đường dẫn của bộ cài đặt này thông qua `settings.FFMPEG_PATH` và `settings.FFPROBE_PATH` khi ứng dụng chạy ở dạng frozen.
 - **Files liên quan**: `scripts/build.py`, `electron/package.json`, `tools/socialpeta_downloader/config.py`, `tools/socialpeta_downloader/core/deduplication.py`, `tools/socialpeta_downloader/core/downloader.py`
+
+### Thread-Safe SQL-to-CSV Synchronization
+- **Ngày**: 2026-06-02
+- **Chi tiết**: Thực hiện đồng bộ hóa một chiều thread-safe từ SQLite sang CSV (`download_info.csv` và `duplicate_audit.csv`) dưới khối khóa `history_lock` và SQLite WAL mode, đảm bảo file CSV luôn nhất quán, cập nhật trực quan cho người dùng mà không gây crash do xung đột ghi đồng thời từ nhiều worker.
+- **Files liên quan**: `tools/socialpeta_downloader/core/session.py`

@@ -1,0 +1,346 @@
+diff --git a/tools/socialpeta_downloader/core/utils.py b/tools/socialpeta_downloader/core/utils.py
+index 6d1a0c7..f382306 100644
+--- a/tools/socialpeta_downloader/core/utils.py
++++ b/tools/socialpeta_downloader/core/utils.py
+@@ -14,6 +14,7 @@ from datetime import datetime
+ from urllib.parse import urlparse
+ from typing import Optional, List, Dict, Any
+ from socialpeta_downloader.config import settings
++from socialpeta_downloader.core.protocols import IEngineContext
+ 
+ class SafeStreamWrapper:
+     def __init__(self, original_stream):
+@@ -87,22 +88,9 @@ def is_socialpeta_url(url: str) -> bool:
+     u = url.lower()
+     return "socialpeta.com" in u or "guangdada.com" in u
+ 
+-class UtilsMixin:
+-    log_queue: Any
+-    log_subscribers: list
+-    log_subscribers_lock: threading.Lock
+-    item_locks: dict
+-    item_locks_lock: threading.Lock
+-    item_status_cache: dict
+-    stats: dict
+-    stats_lock: threading.Lock
+-    ad_id_to_status: dict
+-    temp_queue_dir: str
+-    stt_lock: threading.RLock
+-    stt_counter: int
+-    csv_path: str
+-    metadata_lock: threading.RLock
+-    session_dir: str
++class UtilsService:
++    def __init__(self, context: Optional[IEngineContext] = None):
++        self.context = context
+ 
+     def log(self, level: str, message: str):
+         msg = {
+@@ -110,23 +98,26 @@ class UtilsMixin:
+             "timestamp": datetime.now().strftime("%H:%M:%S"),
+             "message": message
+         }
+-        self.log_queue.put(msg)
+-        with self.log_subscribers_lock:
+-            for sub_queue in self.log_subscribers:
+-                try:
+-                    sub_queue.put_nowait(msg)
+-                except Exception:
+-                    pass
++        if self.context:
++            self.context.log_queue.put(msg)
++            with self.context.log_subscribers_lock:
++                for sub_queue in self.context.log_subscribers:
++                    try:
++                        sub_queue.put_nowait(msg)
++                    except Exception:
++                        pass
+         print(f"[{level.upper()}] {message}")
+ 
+     def clear_logs(self):
+-        while not self.log_queue.empty():
++        if not self.context:
++            return
++        while not self.context.log_queue.empty():
+             try:
+-                self.log_queue.get_nowait()
++                self.context.log_queue.get_nowait()
+             except Exception:
+                 break
+-        with self.log_subscribers_lock:
+-            for sub_queue in self.log_subscribers:
++        with self.context.log_subscribers_lock:
++            for sub_queue in self.context.log_subscribers:
+                 while not sub_queue.empty():
+                     try:
+                         sub_queue.get_nowait()
+@@ -134,36 +125,100 @@ class UtilsMixin:
+                         break
+ 
+     def get_item_lock(self, fpath: str) -> Any:
+-        return RefCountedLock(fpath, self.item_locks, self.item_locks_lock)
++        # RefCountedLock expects the lock dict and lock object from the context
++        item_locks = self.context.item_locks if self.context else {}
++        item_locks_lock = self.context.item_locks_lock if self.context else threading.Lock()
++        return RefCountedLock(fpath, item_locks, item_locks_lock)
+ 
+-    def _write_item_file(self, fpath: str, item: dict):
+-        import shutil
+-        tmp_path = fpath + ".tmp"
++    def get_db_path(self) -> str:
++        return os.path.join(settings.DATA_DIR, "db.sqlite3")
++
++    def db_get_item(self, ad_id: str) -> Optional[dict]:
++        import sqlite3
++        db_path = self.get_db_path()
++        conn = sqlite3.connect(db_path, timeout=10.0)
++        conn.execute("PRAGMA journal_mode=WAL;")
++        conn.execute("PRAGMA busy_timeout=5000;")
++        try:
++            cursor = conn.cursor()
++            cursor.execute("SELECT item_json FROM ad_metadata WHERE ad_id = ?", (ad_id,))
++            row = cursor.fetchone()
++            if row:
++                return json.loads(row[0])
++        except Exception as e:
++            print(f"[-] Error db_get_item for {ad_id}: {e}")
++        finally:
++            conn.close()
++        return None
++
++    def db_get_item_by_fpath(self, fpath: str) -> Optional[dict]:
++        import sqlite3
++        db_path = self.get_db_path()
++        conn = sqlite3.connect(db_path, timeout=10.0)
++        conn.execute("PRAGMA journal_mode=WAL;")
++        conn.execute("PRAGMA busy_timeout=5000;")
+         try:
+-            with open(tmp_path, 'w', encoding='utf-8') as f:
+-                json.dump(item, f, indent=4, ensure_ascii=False)
+-            shutil.move(tmp_path, fpath)
++            cursor = conn.cursor()
++            cursor.execute("SELECT item_json FROM ad_metadata WHERE fpath = ?", (fpath,))
++            row = cursor.fetchone()
++            if row:
++                return json.loads(row[0])
++        except Exception as e:
++            print(f"[-] Error db_get_item_by_fpath for {fpath}: {e}")
++        finally:
++            conn.close()
++        return None
++
++    def _write_item_file(self, fpath: str, item: dict):
++        import sqlite3
++        db_path = self.get_db_path()
++        ad_id = item.get("ad_id")
++        if not ad_id:
++            return
++            
++        if not fpath:
++            temp_queue_dir = self.context.temp_queue_dir if self.context else "data/.temp"
++            api_dir = os.path.join(temp_queue_dir, "api")
++            os.makedirs(api_dir, exist_ok=True)
++            fpath = os.path.join(api_dir, f"{ad_id}.json")
++            item["fpath"] = fpath
+             
+-            old_status = self.item_status_cache.get(fpath)
+-            new_status = item.get("status", "pending")
+-            if old_status != new_status:
+-                with self.stats_lock:
+-                    if old_status and old_status in self.stats:
+-                        self.stats[old_status] = max(0, self.stats[old_status] - 1)
+-                    if new_status in self.stats:
+-                        self.stats[new_status] += 1
++        status = item.get("status", "pending")
++        item_json = json.dumps(item, ensure_ascii=False)
++        
++        conn = sqlite3.connect(db_path, timeout=10.0)
++        conn.execute("PRAGMA journal_mode=WAL;")
++        conn.execute("PRAGMA busy_timeout=5000;")
++        try:
++            cursor = conn.cursor()
++            cursor.execute("""
++                INSERT OR REPLACE INTO ad_metadata (ad_id, fpath, status, item_json, mtime)
++                VALUES (?, ?, ?, ?, ?)
++            """, (ad_id, fpath, status, item_json, time.time()))
++            conn.commit()
+             
+-            self.item_status_cache[fpath] = new_status
+-            ad_id = item.get("ad_id")
+-            if ad_id:
+-                self.ad_id_to_status[ad_id] = new_status
++            if self.context:
++                old_status = self.context.item_status_cache.get(fpath)
++                new_status = status
++                if old_status != new_status:
++                    with self.context.stats_lock:
++                        if old_status and old_status in self.context.stats:
++                            self.context.stats[old_status] = max(0, self.context.stats[old_status] - 1)
++                        if new_status in self.context.stats:
++                            self.context.stats[new_status] += 1
++                
++                self.context.item_status_cache[fpath] = new_status
++                self.context.ad_id_to_status[ad_id] = new_status
+         except Exception as e:
+-            print(f"[-] Error writing item file {fpath}: {e}")
++            print(f"[-] Error writing SQLite ad_metadata for {ad_id}: {e}")
++        finally:
++            conn.close()
+ 
+     def _save_item_state(self, item: dict):
+         fpath = item.get("fpath")
+         if not fpath:
+-            api_dir = os.path.join(self.temp_queue_dir, "api")
++            temp_queue_dir = self.context.temp_queue_dir if self.context else "data/.temp"
++            api_dir = os.path.join(temp_queue_dir, "api")
+             os.makedirs(api_dir, exist_ok=True)
+             fpath = os.path.join(api_dir, f"{item['ad_id']}.json")
+             item["fpath"] = fpath
+@@ -209,9 +264,11 @@ class UtilsMixin:
+         clean_name = self.clean_app_name(app_name)
+         date_str = datetime.now().strftime("%d%m%Y")
+         
+-        with self.stt_lock:
+-            stt = self.stt_counter
+-            self.stt_counter += 1
++        stt = 1
++        if self.context:
++            with self.context.stt_lock:
++                stt = self.context.stt_counter
++                self.context.stt_counter += 1
+             
+         filename = f"{clean_name}_SPY_{date_str}_{stt}.mp4"
+         return filename, stt
+@@ -226,9 +283,11 @@ class UtilsMixin:
+                 if path_part.lower().endswith(e):
+                     ext = e
+                     break
+-        with self.stt_lock:
+-            stt = self.stt_counter
+-            self.stt_counter += 1
++        stt = 1
++        if self.context:
++            with self.context.stt_lock:
++                stt = self.context.stt_counter
++                self.context.stt_counter += 1
+         filename = f"{clean_name}_SPY_{date_str}_{stt}{ext}"
+         return filename, stt
+ 
+@@ -246,67 +305,72 @@ class UtilsMixin:
+                 return last
+         return ""
+ 
+-
+     def _read_temp_json(self) -> dict:
++        import sqlite3
+         data = {}
+-        if not os.path.exists(self.temp_queue_dir):
+-            return data
++        db_path = self.get_db_path()
++        conn = sqlite3.connect(db_path, timeout=10.0)
++        conn.execute("PRAGMA journal_mode=WAL;")
++        conn.execute("PRAGMA busy_timeout=5000;")
+         try:
+-            subdirs = [d for d in os.listdir(self.temp_queue_dir) if d.startswith("tab") or d == "api"]
+-            for subdir in subdirs:
+-                subdir_path = os.path.join(self.temp_queue_dir, subdir)
+-                if os.path.isdir(subdir_path):
+-                    for fname in os.listdir(subdir_path):
+-                        if fname.endswith(".json"):
+-                            fpath = os.path.join(subdir_path, fname)
+-                            try:
+-                                with open(fpath, 'r', encoding='utf-8') as f:
+-                                    item = json.load(f)
+-                                    ad_id = item.get("ad_id")
+-                                    if ad_id:
+-                                        data[ad_id] = item
+-                            except Exception:
+-                                pass
+-        except Exception:
+-            pass
++            cursor = conn.cursor()
++            cursor.execute("SELECT ad_id, item_json FROM ad_metadata")
++            for ad_id, item_json in cursor.fetchall():
++                try:
++                    data[ad_id] = json.loads(item_json)
++                except Exception:
++                    pass
++        except Exception as e:
++            print(f"[-] Error reading all metadata from SQLite: {e}")
++        finally:
++            conn.close()
+         return data
+ 
+     def _is_ad_already_downloaded(self, ad_id: str) -> bool:
+-        status = self.ad_id_to_status.get(ad_id)
+-        if status in ("done", "downloaded"):
+-            return True
++        if self.context:
++            status = self.context.ad_id_to_status.get(ad_id)
++            if status in ("done", "downloaded"):
++                return True
+                 
+-        if os.path.exists(self.csv_path):
+-            try:
+-                with self.metadata_lock:
+-                    with open(self.csv_path, 'r', encoding='utf-8', errors='ignore') as f:
+-                        reader = csv.DictReader(f)
+-                        for row in reader:
+-                            if row.get("ad_id") == ad_id:
+-                                saved_path = row.get("saved_path", "")
+-                                try:
+-                                    fsize = int(row.get("file_size", "0") or "0")
+-                                except ValueError:
+-                                    fsize = 0
+-                                if saved_path and fsize > 0:
+-                                    self.ad_id_to_status[ad_id] = "done"
+-                                    return True
+-            except Exception:
+-                pass
++        import sqlite3
++        db_path = self.get_db_path()
++        conn = sqlite3.connect(db_path, timeout=10.0)
++        conn.execute("PRAGMA journal_mode=WAL;")
++        conn.execute("PRAGMA busy_timeout=5000;")
++        try:
++            cursor = conn.cursor()
++            cursor.execute("SELECT saved_path, file_size FROM download_history WHERE ad_id = ?", (ad_id,))
++            row = cursor.fetchone()
++            if row:
++                saved_path, file_size = row
++                try:
++                    fsize = int(file_size or "0")
++                except ValueError:
++                    fsize = 0
++                if saved_path and os.path.exists(saved_path) and fsize > 0:
++                    if self.context:
++                        self.context.ad_id_to_status[ad_id] = "done"
++                    return True
++        except Exception as e:
++            print(f"[-] Error checking ad download in SQLite: {e}")
++        finally:
++            conn.close()
+         return False
+ 
+     def _is_ad_already_downloading_or_done(self, ad_id: str, exclude_path: Optional[str] = None) -> bool:
+         if self._is_ad_already_downloaded(ad_id):
+             return True
+-        status = self.ad_id_to_status.get(ad_id)
+-        if status in ("downloading", "done", "downloaded"):
+-            return True
++        if self.context:
++            status = self.context.ad_id_to_status.get(ad_id)
++            if status in ("downloading", "done", "downloaded"):
++                return True
+         return False
+ 
+     def _get_playwright_context(self, p):
+-        state_file = os.path.join(self.session_dir, "storage_state.json")
++        session_dir = self.context.session_dir if self.context else "data/session"
++        state_file = os.path.join(session_dir, "storage_state.json")
+         return p.chromium.launch_persistent_context(
+-            user_data_dir=self.session_dir,
++            user_data_dir=session_dir,
+             headless=True,
+             args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+             storage_state=state_file if os.path.exists(state_file) else None

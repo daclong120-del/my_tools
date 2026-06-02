@@ -19,14 +19,19 @@ class Settings:
         # Running in dev mode
         ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+    # Writable data directory — separated from install dir for frozen builds
+    if getattr(sys, 'frozen', False):
+        DATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "SocialPetaDownloader")
+    else:
+        DATA_DIR = os.path.join(ROOT_DIR, "data")
+
     DOWNLOAD_DIR: str = os.getenv("SOCIALPETA_DOWNLOAD_DIR", os.path.join(
         ROOT_DIR,
         "data",
         "videos"
     ))
     SESSION_DIR: str = os.getenv("SOCIALPETA_SESSION_DIR", os.path.join(
-        ROOT_DIR,
-        "data",
+        DATA_DIR,
         "playwright_session"
     ))
 
@@ -51,5 +56,8 @@ class Settings:
 settings = Settings()
 
 # Đảm bảo các thư mục tồn tại
+os.makedirs(settings.DATA_DIR, exist_ok=True)
 os.makedirs(settings.DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(settings.SESSION_DIR, exist_ok=True)
+print(f"[*] DATA_DIR: {settings.DATA_DIR}")
+

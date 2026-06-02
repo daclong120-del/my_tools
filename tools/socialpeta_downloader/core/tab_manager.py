@@ -4,54 +4,37 @@ Responsibility: Multi-tab detection and management. Connects over CDP, injects t
 """
 
 import os
+import re
 import time
 import uuid
 import queue
 import threading
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from socialpeta_downloader.config import settings
 from playwright.sync_api import sync_playwright
 from socialpeta_downloader.core.utils import is_socialpeta_url
+from socialpeta_downloader.core.protocols import IEngineContext
 
-class TabManagerMixin:
-    # Type declarations to resolve IDE static analysis and linting errors
-    tab_id_to_index: Dict[str, int]
-    tab_is_new: Dict[str, bool]
-    tab_states: Dict[int, Dict[str, Any]]
-    tab_running_events: Dict[int, threading.Event]
-    tab_packet_received_events: Dict[int, threading.Event]
-    tab_last_packet_empty: Dict[int, bool]
-    tab_youtube_queues: Dict[int, queue.Queue]
-    active_pages: Dict[int, Any]
-    running: bool
-
-    if TYPE_CHECKING:
-        # Dummy method declarations to prevent IDE unresolved attribute/method warnings
-        def ensure_chrome_debug_port(self, port: Optional[int] = None) -> bool:
-            ...
-
-        def run_tab_pagination_loop(self, tab_index: int, page: Any, total_pages: int) -> None:
-            ...
-
-        def _process_api_response_for_tab(self, tab_index: int, data: dict) -> None:
-            ...
-
-        def _youtube_extract_worker_for_tab(self, tab_index: int, page: Any) -> None:
-            ...
-
+class TabScanner:
+    def __init__(self, context: Optional[IEngineContext] = None):
+        self.context = context
 
     def detect_tabs(self, port: Optional[int] = None) -> list:
         """
         Connects to Chrome debug port via HTTP DevTools protocol, detects all SocialPeta tabs,
         and returns a list of active tabs. Fast, lightweight, and prevents CDP session leaks.
         """
-        if not self.ensure_chrome_debug_port(port):
+        if not self.context:
             return []
+            
+        if not self.context.chrome_service.ensure_chrome_debug_port(port):
+            return []
+            
         port_val = port if port is not None else settings.CHROME_DEBUG_PORT
         import requests
         active_tabs = []
         try:
-            resp = requests.get(f"http://127.0.0.1:{port_val}/json/list", timeout=3.0)
+            resp = requests.get(f"http://127.0.0.1:{port_val}/json/list", timeout=2.0)
             if resp.status_code != 200:
                 return []
             pages_list = resp.json()
@@ -71,15 +54,15 @@ class TabManagerMixin:
                     
                 current_active_tab_ids.add(tab_id)
                 
-                if tab_id not in self.tab_id_to_index:
-                    new_idx = len(self.tab_id_to_index) + 1
-                    self.tab_id_to_index[tab_id] = new_idx
-                    self.tab_is_new[tab_id] = True
+                if tab_id not in self.context.tab_id_to_index:
+                    new_idx = len(self.context.tab_id_to_index) + 1
+                    self.context.tab_id_to_index[tab_id] = new_idx
+                    self.context.tab_is_new[tab_id] = True
                     
-                idx = self.tab_id_to_index[tab_id]
+                idx = self.context.tab_id_to_index[tab_id]
                 
-                if idx not in self.tab_states:
-                    self.tab_states[idx] = {
+                if idx not in self.context.tab_states:
+                    self.context.tab_states[idx] = {
                         "status": "new",
                         "current_page": 1,
                         "target_pages": 0,
@@ -90,8 +73,8 @@ class TabManagerMixin:
                         "tab_id": tab_id
                     }
                 else:
-                    self.tab_states[idx]["url"] = url
-                    self.tab_states[idx]["title"] = title
+                    self.context.tab_states[idx]["url"] = url
+                    self.context.tab_states[idx]["title"] = title
                     
                 active_tabs.append({
                     "index": idx,
@@ -103,20 +86,30 @@ class TabManagerMixin:
             if not active_tabs:
                 print("[*] No active SocialPeta tabs detected. Waiting for user to navigate manually.")
                 
-            all_assigned_tab_ids = list(self.tab_id_to_index.keys())
+            all_assigned_tab_ids = list(self.context.tab_id_to_index.keys())
             for tid in all_assigned_tab_ids:
                 if tid not in current_active_tab_ids:
-                    idx = self.tab_id_to_index[tid]
-                    if idx in self.tab_running_events:
-                        self.tab_running_events[idx].clear()
-                    if idx in self.tab_states:
-                        self.tab_states[idx]["status"] = "closed"
+                    idx = self.context.tab_id_to_index[tid]
+                    if idx in self.context.tab_running_events:
+                        self.context.tab_running_events[idx].clear()
+                    if idx in self.context.tab_states:
+                        self.context.tab_states[idx]["status"] = "closed"
+        except requests.exceptions.Timeout:
+            print(f"[-] Timeout: Chrome DevTools protocol at 127.0.0.1:{port_val} did not respond within 2.0 seconds.")
+        except requests.exceptions.ConnectionError:
+            print(f"[-] Connection Error: Chrome debug port {port_val} is not active or unreachable.")
         except Exception as e:
-            print(f"[-] Error detecting tabs: {e}")
+            import traceback
+            print(f"[-] Error detecting tabs: {e}\n{traceback.format_exc()}")
+            if self.context:
+                self.context.log("error", f"[-] Error detecting tabs: {e}\n{traceback.format_exc()}")
             
         return active_tabs
 
     def _find_page_by_id(self, context, tab_id: str):
+        if not self.context:
+            return None
+            
         # 1. Try matching using DevTools targetId via CDPSession
         for p in context.pages:
             try:
@@ -146,9 +139,9 @@ class TabManagerMixin:
         for p in context.pages:
             try:
                 if p.url and is_socialpeta_url(p.url):
-                    idx = self.tab_id_to_index.get(tab_id)
+                    idx = self.context.tab_id_to_index.get(tab_id)
                     if idx is not None:
-                        state = self.tab_states.get(idx)
+                        state = self.context.tab_states.get(idx)
                         if state and p.url == state.get("url") and p.title() == state.get("title"):
                             return p
             except Exception:
@@ -156,14 +149,122 @@ class TabManagerMixin:
                 
         return None
 
+    def _scrape_app_name_from_dom(self, page) -> Optional[str]:
+        """
+        Attempts to scrape the app name or advertiser name directly from the DOM of the SocialPeta page.
+        """
+        from urllib.parse import urlparse, parse_qs
+        try:
+            # 1. Try to find the app name from selected items/tags in filter bar
+            tag_selectors = [
+                ".ant-select-selection-item",
+                ".el-select__tags-text",
+                ".filter-tag",
+                ".app-name",
+                ".app-title",
+                ".advertiser-name",
+                ".game-name",
+                ".advertiser-info-name",
+                ".app-info-name",
+                ".app-card-name"
+            ]
+            for sel in tag_selectors:
+                try:
+                    locs = page.locator(sel)
+                    for i in range(locs.count()):
+                        val = locs.nth(i).text_content()
+                        if val:
+                            val = val.strip()
+                            val_lower = val.lower()
+                            if val and not any(kw in val_lower for kw in [
+                                "socialpeta", "guangdada", "ad search", "creative", "tải", "downloader", 
+                                "tiktok", "facebook", "google", "youtube", "quảng cáo", "tìm kiếm", "all", "tất cả"
+                            ]):
+                                return val
+                except Exception:
+                    continue
+
+            # 2. Try input values (search boxes)
+            input_selectors = [
+                "input[placeholder*='App' i]",
+                "input[placeholder*='Package' i]",
+                "input[placeholder*='Tên' i]",
+                "input[placeholder*='ứng dụng' i]",
+                "input[placeholder*='nhà quảng cáo' i]",
+                "input[placeholder*='Search' i]",
+                "input[placeholder*='Tìm' i]",
+                "input.ant-input",
+                "input.el-input__inner"
+            ]
+            for sel in input_selectors:
+                try:
+                    locs = page.locator(sel)
+                    for i in range(locs.count()):
+                        val = locs.nth(i).input_value()
+                        if val:
+                            val = val.strip()
+                            val_lower = val.lower()
+                            if val and not any(kw in val_lower for kw in [
+                                "socialpeta", "guangdada", "ad search", "creative", "tải", "downloader", 
+                                "tiktok", "facebook", "google", "youtube", "quảng cáo", "tìm kiếm"
+                            ]):
+                                return val
+                except Exception:
+                    continue
+
+            # 3. Try to get any header (h1, h2, h3) that might contain the app/advertiser name
+            header_selectors = ["h1", "h2", "h3"]
+            for sel in header_selectors:
+                try:
+                    locs = page.locator(sel)
+                    for i in range(locs.count()):
+                        val = locs.nth(i).text_content()
+                        if val:
+                            val = val.strip()
+                            val_lower = val.lower()
+                            if val and not any(kw in val_lower for kw in [
+                                "socialpeta", "guangdada", "ad search", "creative", "tải", "downloader", 
+                                "tiktok", "facebook", "google", "youtube", "quảng cáo", "tìm kiếm"
+                            ]):
+                                return val
+                except Exception:
+                    continue
+
+            # 4. Try from URL query parameters
+            try:
+                parsed_url = urlparse(page.url)
+                qs = parse_qs(parsed_url.query)
+                for param in ["appName", "app_name", "keyword", "keywords", "q"]:
+                    vals = qs.get(param)
+                    if vals:
+                        val = vals[0].strip()
+                        val_lower = val.lower()
+                        if val and not any(kw in val_lower for kw in [
+                            "socialpeta", "guangdada", "ad search", "creative", "tải", "downloader", 
+                            "tiktok", "facebook", "google", "youtube", "quảng cáo", "tìm kiếm"
+                        ]):
+                            return val
+            except Exception as url_err:
+                print(f"[-] Error extracting app name from URL query: {url_err}")
+
+        except Exception as e:
+            import traceback
+            print(f"[-] Error scraping app name from DOM: {e}\n{traceback.format_exc()}")
+            if self.context:
+                self.context.log("error", f"[-] Error scraping app name from DOM: {e}\n{traceback.format_exc()}")
+        return None
+
     def run_tab_scraper(self, tab_index: int, total_pages: int, port: Optional[int] = None):
+        if not self.context:
+            return
+            
         import queue
         import re
         from datetime import datetime
 
-        tab_id = self.tab_states[tab_index]["tab_id"]
-        url = self.tab_states[tab_index].get("url", "")
-        title = self.tab_states[tab_index].get("title", "")
+        tab_id = self.context.tab_states[tab_index]["tab_id"]
+        url = self.context.tab_states[tab_index].get("url", "")
+        title = self.context.tab_states[tab_index].get("title", "")
         
         # Resolve ad network
         url_lower = url.lower()
@@ -204,6 +305,8 @@ class TabManagerMixin:
                 if cleaned:
                     app_name = cleaned
 
+        need_dom_fallback = not app_name or app_name == "UnknownApp"
+
         # Date string YYYYMMDD
         date_str = datetime.now().strftime("%Y%m%d")
 
@@ -215,27 +318,29 @@ class TabManagerMixin:
         subfolder = base_name
         
         # Deduplication check against active tabs and existing folders
-        existing_subfolders = [t.get("subfolder") for t in self.tab_states.values() if t.get("subfolder")]
+        existing_subfolders = [t.get("subfolder") for t in self.context.tab_states.values() if t.get("subfolder")]
         counter = 2
-        while os.path.exists(os.path.join(self.download_dir, subfolder)) or subfolder in existing_subfolders:
+        while os.path.exists(os.path.join(self.context.download_dir, subfolder)) or subfolder in existing_subfolders:
             subfolder = f"{base_name}_{counter}"
             counter += 1
 
-        self.tab_states[tab_index]["subfolder"] = subfolder
-        self.tab_states[tab_index]["subfolder_path"] = os.path.join(self.download_dir, subfolder)
-        os.makedirs(self.tab_states[tab_index]["subfolder_path"], exist_ok=True)
-
-        print(f"[*] Thread Scraper cho Tab {tab_index} bat dau (Pages: {total_pages})...")
-        print(f"[*] Tab {tab_index} duoc gan thu muc: {self.tab_states[tab_index]['subfolder_path']}")
+        self.context.tab_states[tab_index]["subfolder"] = subfolder
+        self.context.tab_states[tab_index]["subfolder_path"] = os.path.join(self.context.download_dir, subfolder)
+        if not need_dom_fallback:
+            os.makedirs(self.context.tab_states[tab_index]["subfolder_path"], exist_ok=True)
+            print(f"[*] Thread Scraper cho Tab {tab_index} bat dau (Pages: {total_pages})...")
+            print(f"[*] Tab {tab_index} duoc gan thu muc: {self.context.tab_states[tab_index]['subfolder_path']}")
+        else:
+            print(f"[*] Thread Scraper cho Tab {tab_index} bat dau (Pages: {total_pages}). Dang cho lay ten app tu DOM...")
         
-        self.tab_states[tab_index]["status"] = "running"
-        self.tab_states[tab_index]["target_pages"] = total_pages
-        self.tab_running_events[tab_index] = threading.Event()
-        self.tab_running_events[tab_index].set()
+        self.context.tab_states[tab_index]["status"] = "running"
+        self.context.tab_states[tab_index]["target_pages"] = total_pages
+        self.context.tab_running_events[tab_index] = threading.Event()
+        self.context.tab_running_events[tab_index].set()
         
-        self.tab_packet_received_events[tab_index] = threading.Event()
-        self.tab_last_packet_empty[tab_index] = False
-        self.tab_youtube_queues[tab_index] = queue.Queue()
+        self.context.tab_packet_received_events[tab_index] = threading.Event()
+        self.context.tab_last_packet_empty[tab_index] = False
+        self.context.tab_youtube_queues[tab_index] = queue.Queue()
         
         port_val = port if port is not None else settings.CHROME_DEBUG_PORT
         browser = None
@@ -243,7 +348,7 @@ class TabManagerMixin:
             try:
                 for attempt in range(1, 4):
                     try:
-                        browser = p.chromium.connect_over_cdp(f"http://localhost:{port_val}")
+                        browser = p.chromium.connect_over_cdp(f"http://localhost:{port_val}", timeout=2000)
                         break
                     except Exception as e:
                         if attempt == 3:
@@ -252,16 +357,47 @@ class TabManagerMixin:
                         time.sleep(2.0)
                 if not browser or not browser.contexts:
                     print(f"[-] Tab {tab_index}: Khong tim thay context browser.")
-                    self.tab_states[tab_index]["status"] = "failed"
+                    self.context.tab_states[tab_index]["status"] = "failed"
                     return
                 context = browser.contexts[0]
                 page = self._find_page_by_id(context, tab_id)
                 if not page:
                     print(f"[-] Tab {tab_index}: Khong tim thay page voi tab_id={tab_id}")
-                    self.tab_states[tab_index]["status"] = "closed"
+                    self.context.tab_states[tab_index]["status"] = "closed"
                     return
                     
-                self.active_pages[tab_index] = page
+                self.context.active_pages[tab_index] = page
+                
+                # Fallback: scrape app name from DOM if regex failed to extract a valid app name
+                if need_dom_fallback:
+                    dom_app_name = self._scrape_app_name_from_dom(page)
+                    if dom_app_name:
+                        app_name = dom_app_name
+                        print(f"[+] Fallback: Da lay duoc ten app tu DOM: {app_name}")
+                    else:
+                        self.context.utils_service.log("warning", f"Khong the trich xuat ten app tu ca title va DOM cho Tab {tab_index}. Su dung 'UnknownApp'.")
+                    
+                    # Re-calculate subfolder path based on the resolved app name
+                    app_name_clean = re.sub(r'[^\w\-]', '', app_name)
+                    base_name = f"{ad_network_clean}_{app_name_clean}_{date_str}"
+                    subfolder = base_name
+                    
+                    # Deduplication check against active tabs and existing folders
+                    existing_subfolders = [t.get("subfolder") for idx, t in self.context.tab_states.items() if idx != tab_index and t.get("subfolder")]
+                    counter = 2
+                    while os.path.exists(os.path.join(self.context.download_dir, subfolder)) or subfolder in existing_subfolders:
+                        subfolder = f"{base_name}_{counter}"
+                        counter += 1
+                        
+                    self.context.tab_states[tab_index]["subfolder"] = subfolder
+                    self.context.tab_states[tab_index]["subfolder_path"] = os.path.join(self.context.download_dir, subfolder)
+                
+                # Always sync back the resolved app name to tab state
+                self.context.tab_states[tab_index]["app_name"] = app_name
+                
+                # Make sure the directory is created
+                os.makedirs(self.context.tab_states[tab_index]["subfolder_path"], exist_ok=True)
+                print(f"[*] Tab {tab_index} duoc gan thu muc: {self.context.tab_states[tab_index]['subfolder_path']}")
                 
                 def handle_response(response):
                     url = response.url
@@ -272,30 +408,41 @@ class TabManagerMixin:
                     if "/creative/list" in url or "/creative-rank/list" in url:
                         try:
                             body = response.json()
-                            self._process_api_response_for_tab(tab_index, body)
+                            self.context.sniffer_service._process_api_response_for_tab(tab_index, body)
                         except Exception as ex:
-                            print(f"[-] Tab {tab_index} response json error: {ex}")
+                            import traceback
+                            print(f"[-] Tab {tab_index} response json error: {ex}\n{traceback.format_exc()}")
+                            if self.context:
+                                self.context.log("error", f"[-] Tab {tab_index} response json error: {ex}\n{traceback.format_exc()}")
                             
                 page.on("response", handle_response)
                 
                 if "login" in page.url:
                     print(f"[-] Tab {tab_index}: Yeu cau dang nhap.")
-                    self.tab_states[tab_index]["status"] = "expired"
+                    self.context.tab_states[tab_index]["status"] = "expired"
                     return
                     
-                self.run_tab_pagination_loop(tab_index, page, total_pages)
+                self.context.sniffer_service.run_tab_pagination_loop(tab_index, page, total_pages)
                 
-                q = self.tab_youtube_queues.get(tab_index)
-                while self.running and q and not q.empty():
+                q = self.context.tab_youtube_queues.get(tab_index)
+                while self.context.running and q and not q.empty():
                     if page.is_closed():
                         break
-                    self._youtube_extract_worker_for_tab(tab_index, page)
+                    self.context.youtube_service._youtube_extract_worker_for_tab(tab_index, page)
                     time.sleep(0.5)
                 
-                self.tab_running_events[tab_index].clear()
+                self.context.tab_running_events[tab_index].clear()
                     
             except Exception as e:
-                print(f"[-] Tab {tab_index} Scraper error: {e}")
+                import traceback
+                print(f"[-] Tab {tab_index} Scraper error: {e}\n{traceback.format_exc()}")
+                if self.context:
+                    self.context.log("error", f"[-] Tab {tab_index} Scraper error: {e}\n{traceback.format_exc()}")
+                err_str = str(e).lower()
+                if "closed" in err_str or "target" in err_str or "navigation" in err_str:
+                    self.context.tab_states[tab_index]["status"] = "closed"
+                else:
+                    self.context.tab_states[tab_index]["status"] = "failed"
             finally:
                 if 'page' in locals() and page:
                     try:
@@ -307,11 +454,11 @@ class TabManagerMixin:
                         browser.close()
                     except Exception:
                         pass
-                if tab_index in self.active_pages:
-                    del self.active_pages[tab_index]
+                if tab_index in self.context.active_pages:
+                    del self.context.active_pages[tab_index]
                 
                 # Only overwrite to "done" if not in a terminal error state
-                current_status = self.tab_states[tab_index].get("status")
+                current_status = self.context.tab_states[tab_index].get("status")
                 if current_status not in ("closed", "failed", "expired"):
-                    self.tab_states[tab_index]["status"] = "done"
-                print(f"[+] Tab {tab_index} Scraper dung. Trang thai cuoi: {self.tab_states[tab_index]['status']}")
+                    self.context.tab_states[tab_index]["status"] = "done"
+                print(f"[+] Tab {tab_index} Scraper dung. Trang thai cuoi: {self.context.tab_states[tab_index]['status']}")

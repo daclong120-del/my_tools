@@ -3,6 +3,10 @@ const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
 
+// Fix GPU sandbox crash on some Windows machines
+app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-gpu-sandbox');
+
 let mainWindow;
 let backendProcess;
 
@@ -48,9 +52,6 @@ process.on('unhandledRejection', (reason, promise) => {
     }
   } catch (e) {}
 });
-
-let mainWindow;
-let backendProcess;
 
 // Helper to check if backend API is ready via HTTP health endpoint
 const http = require('http');
@@ -104,38 +105,22 @@ function createWindow() {
     } catch (e) {}
   });
 
-  // Load beautiful loading screen first
-  mainWindow.loadURL('data:text/html,<html><head><meta charset="utf-8"><style>body{display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background-color:#0f0f15;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;} .container{text-align:center;} .spinner{border:4px solid rgba(255,255,255,0.1);width:40px;height:40px;border-radius:50%;border-left-color:#3b82f6;animation:spin 1s linear infinite;margin:0 auto 20px;} @keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}} h2{font-weight:500;margin:0 0 10px 0;letter-spacing:-0.01em;} p{color:#9ca3af;margin:0;font-size:14px;}</style></head><body><div class="container"><div class="spinner"></div><h2>Khởi động Engine gỡ lỗi...</h2><p>Đang kết nối tới Python Backend API</p></div></body></html>');
-
   const isProd = app.isPackaged;
-  const port = 8003;
 
-  async function loadApplication() {
-    let retries = 40; // Wait up to 20 seconds (40 * 500ms)
-    while (retries > 0) {
-      const ready = await checkBackendHealth(port, '127.0.0.1');
-      if (ready) break;
-      await new Promise(r => setTimeout(r, 500));
-      retries--;
-    }
-
-    if (isProd) {
-      mainWindow.loadFile(path.join(__dirname, 'frontend/index.html'))
-        .catch(() => {
-          mainWindow.loadURL('data:text/html,<h1>MyTools Desktop</h1><p>Frontend static files not found. Please run build scripts first.</p>');
+  if (isProd) {
+    mainWindow.loadFile(path.join(__dirname, 'frontend/index.html'))
+      .catch(() => {
+        mainWindow.loadURL('data:text/html,<h1>MyTools Desktop</h1><p>Frontend static files not found. Please run build scripts first.</p>');
+      });
+  } else {
+    mainWindow.loadURL('http://localhost:3000')
+      .catch(() => {
+        const indexPath = path.join(__dirname, '../frontends/socialpeta_downloader/out/index.html');
+        mainWindow.loadFile(indexPath).catch(() => {
+          mainWindow.loadURL('data:text/html,<h1>MyTools Desktop</h1><p>Please run next.js dev server on http://localhost:3000 or build static files.</p>');
         });
-    } else {
-      mainWindow.loadURL('http://localhost:3000')
-        .catch(() => {
-          const indexPath = path.join(__dirname, '../frontends/socialpeta_downloader/out/index.html');
-          mainWindow.loadFile(indexPath).catch(() => {
-            mainWindow.loadURL('data:text/html,<h1>MyTools Desktop</h1><p>Please run next.js dev server on http://localhost:3000 or build static files.</p>');
-          });
-        });
-    }
+      });
   }
-
-  loadApplication();
 
   mainWindow.on('closed', function () {
     mainWindow = null;

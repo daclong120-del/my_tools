@@ -12,39 +12,40 @@ class TestCoreSplit(unittest.TestCase):
         self.core = SocialPetaDownloaderCore()
 
     def test_mixins_presence(self):
-        # Check that methods from different mixins are available on core
-        # UtilsMixin
+        # Check that delegated methods and services are available on core
+        
+        # Composed Services
+        self.assertTrue(hasattr(self.core, 'utils_service'))
+        self.assertTrue(hasattr(self.core, 'chrome_service'))
+        self.assertTrue(hasattr(self.core, 'deduplication_service'))
+        self.assertTrue(hasattr(self.core, 'downloader_service'))
+        self.assertTrue(hasattr(self.core, 'tab_scanner'))
+        self.assertTrue(hasattr(self.core, 'youtube_service'))
+        self.assertTrue(hasattr(self.core, 'sniffer_service'))
+        self.assertTrue(hasattr(self.core, 'session_service'))
+
+        # Utils Service (delegated or directly on service)
         self.assertTrue(hasattr(self.core, 'clean_app_name'))
         self.assertTrue(hasattr(self.core, 'get_unique_filename'))
-        self.assertTrue(hasattr(self.core, 'append_to_csv'))
+        self.assertTrue(hasattr(self.core.session_service, 'append_to_csv'))
         
-        # ChromeMixin
-        self.assertTrue(hasattr(self.core, 'ensure_chrome_debug_port'))
+        # Chrome Service
+        self.assertTrue(hasattr(self.core.chrome_service, 'ensure_chrome_debug_port'))
         self.assertTrue(hasattr(self.core, 'check_and_launch_chrome'))
         
-        # DedupMixin
-        self.assertTrue(hasattr(self.core, 'check_duplicate'))
-        self.assertTrue(hasattr(self.core, 'get_video_duration'))
+        # Dedup Service
+        self.assertTrue(hasattr(self.core.deduplication_service, 'check_duplicate'))
+        self.assertTrue(hasattr(self.core.deduplication_service, 'get_video_duration'))
         
-        # SnifferMixin
-        self.assertTrue(hasattr(self.core, 'stream_1_sniffer'))
-        
-        # TabManagerMixin
+        # Tab Scanners & Run
         self.assertTrue(hasattr(self.core, 'run_tab_scraper'))
         self.assertTrue(hasattr(self.core, 'detect_tabs'))
         
-        # DownloaderMixin
-        self.assertTrue(hasattr(self.core, '_download_worker'))
+        # Downloader
         self.assertTrue(hasattr(self.core, 'start_system'))
         self.assertTrue(hasattr(self.core, 'stop_system'))
         
-        # YoutubeMixin
-        self.assertTrue(hasattr(self.core, '_youtube_extract_worker'))
-        
-        # LegacySnifferMixin
-        self.assertTrue(hasattr(self.core, 'stream_1_sniffer'))
-        
-        # LegacyScraperMixin
+        # Legacy Scraper
         self.assertTrue(hasattr(self.core, 'download_single_ad'))
         self.assertTrue(hasattr(self.core, 'scrape_search_page_and_download'))
 

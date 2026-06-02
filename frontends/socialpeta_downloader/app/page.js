@@ -37,6 +37,12 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState("");
   const [downloadDir, setDownloadDir] = useState("");
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [isElectron, setIsElectron] = useState(false);
+
+  // Detect Electron environment after mount to avoid hydration mismatch
+  useEffect(() => {
+    setIsElectron(typeof window !== 'undefined' && !!window.electronAPI);
+  }, []);
   
   // Tab Manager States
   const [tabs, setTabs] = useState([]);
@@ -95,47 +101,6 @@ export default function Home() {
     }
   }, [logs]);
 
-  // Auto-connect and check status on page load
-  useEffect(() => {
-    const autoCheck = async () => {
-      try {
-        const res = await fetch(`http://127.0.0.1:8003/api/v1/socialpeta/status?port=${debugPort}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.logged_in) {
-            setConnectionStatus("connected");
-            addLog("success", "Tự động phát hiện phiên đăng nhập còn hiệu lực!");
-            // Refresh tabs list
-            setIsRefreshingTabs(true);
-            const tabsRes = await fetch(`http://127.0.0.1:8003/api/v1/socialpeta/tabs?port=${debugPort}`);
-            if (tabsRes.ok) {
-              const tabsData = await tabsRes.json();
-              const mapped = tabsData.map(t => ({
-                tab_id: t.index,
-                url: t.url,
-                title: t.title || "SocialPeta Page",
-                page: "—",
-                type: (t.title || "").includes("TikTok") ? "TikTok Ads" : (t.title || "").includes("Facebook") ? "Facebook Ads" : "SocialPeta Page",
-                status: "IDLE"
-              }));
-              setTabs(mapped);
-              const newSelected = {};
-              mapped.forEach(t => {
-                newSelected[t.tab_id] = true;
-              });
-              setSelectedRows(newSelected);
-              addLog("success", `Dò quét thành công. Phát hiện ${mapped.length} tab SocialPeta đang mở.`);
-            }
-            setIsRefreshingTabs(false);
-            setCurrentTab("tabs");
-          }
-        }
-      } catch (err) {
-        // Backend not running yet or offline
-      }
-    };
-    autoCheck();
-  }, []);
 
   // Load configuration from backend
   useEffect(() => {
@@ -172,8 +137,8 @@ export default function Home() {
           if (data.stats) {
             setStats({
               total: data.stats.total_sniffed || 0,
-              downloading: Object.values(data.tab_states).reduce((acc, job) => acc + (job.status === "running" ? 1 : 0), 0),
-              pending: data.stats.total_sniffed - data.stats.done - data.stats.failed - data.stats.duplicate,
+              downloading: data.stats.downloading || 0,
+              pending: data.stats.pending || 0,
               done: data.stats.done || 0,
               failed: data.stats.failed || 0,
               duplicate: data.stats.duplicate || 0
@@ -259,6 +224,8 @@ export default function Home() {
         const mapped = data.map((row, idx) => ({
           id: idx + 1,
           app_name: row.app_name || "AdVideo",
+          video_name: row.video_name || "",
+          saved_path: row.saved_path || "",
           platform: row.platform || "Facebook",
           area: row.area || "Vietnam",
           media_type: row.media_type || "Video",
@@ -272,6 +239,7 @@ export default function Home() {
       console.error("Lỗi tải dữ liệu báo cáo:", err);
     }
   };
+
 
   // Actions
   const handleConnect = async (e) => {
@@ -497,14 +465,20 @@ export default function Home() {
     return reportData.filter(row => {
       if (reportFilters.platform !== "all" && row.platform !== reportFilters.platform) return false;
       if (reportFilters.area !== "all" && row.area !== reportFilters.area) return false;
-      if (reportFilters.appName !== "all" && !row.app_name.toLowerCase().includes(reportFilters.appName.toLowerCase())) return false;
+      if (reportFilters.appName !== "all") {
+        const query = reportFilters.appName.toLowerCase();
+        const matchesApp = row.app_name.toLowerCase().includes(query);
+        const matchesFile = (row.video_name || "").toLowerCase().includes(query);
+        if (!matchesApp && !matchesFile) return false;
+      }
       if (reportFilters.mediaType !== "all" && row.media_type !== reportFilters.mediaType) return false;
       return true;
     });
   };
 
+
   const handleExportCSV = async () => {
-    if (typeof window !== 'undefined' && window.electronAPI) {
+    if (isElectron) {
       try {
         const filePath = await window.electronAPI.showSaveDialog("download_info.csv");
         if (filePath) {
@@ -618,51 +592,80 @@ export default function Home() {
                       type="text"
                       className="form-input"
                       value={downloadDir}
-                      onChange={(e) => {
-                        if (typeof window !== 'undefined' && !window.electronAPI) {
-                          setDownloadDir(e.target.value);
-                        }
-                      }}
+                      onChange={(e) => setDownloadDir(e.target.value)}
                       placeholder="Chọn thư mục tải xuống..."
                       required
-                      disabled={(typeof window !== 'undefined' && !!window.electronAPI) || isSavingConfig}
+                      disabled={isSavingConfig}
                       style={{ flex: 1, padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '14px' }}
                     />
-                    {typeof window !== 'undefined' && window.electronAPI ? (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={async () => {
-                          try {
-                            const selected = await window.electronAPI.selectDirectory(downloadDir);
-                            if (selected) {
+                    {isElectron ? (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={async () => {
+                            try {
+                              const selected = await window.electronAPI.selectDirectory(downloadDir);
+                              if (selected) {
+                                setDownloadDir(selected);
+                                setIsSavingConfig(true);
+                                const res = await fetch("http://127.0.0.1:8003/api/v1/socialpeta/config", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ download_dir: selected })
+                                });
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  setDownloadDir(data.download_dir);
+                                  addLog("success", `Đã đổi thư mục tải xuống thành: ${data.download_dir}`);
+                                } else {
+                                  const err = await res.json();
+                                  addLog("error", `Lỗi đổi thư mục: ${err.detail || "Không rõ nguyên nhân"}`);
+                                }
+                              }
+                            } catch (err) {
+                              addLog("error", `Lỗi chọn thư mục: ${err.message}`);
+                            } finally {
+                              setIsSavingConfig(false);
+                            }
+                          }}
+                          disabled={isSavingConfig}
+                          style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <FolderOpen size={16} />
+                          <span>Chọn</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={async () => {
+                            try {
                               setIsSavingConfig(true);
                               const res = await fetch("http://127.0.0.1:8003/api/v1/socialpeta/config", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ download_dir: selected })
+                                body: JSON.stringify({ download_dir: downloadDir })
                               });
                               if (res.ok) {
                                 const data = await res.json();
                                 setDownloadDir(data.download_dir);
-                                addLog("success", `Đã đổi thư mục tải xuống thành: ${data.download_dir}`);
+                                addLog("success", `Đã lưu thư mục tải xuống thành công: ${data.download_dir}`);
                               } else {
                                 const err = await res.json();
-                                addLog("error", `Lỗi đổi thư mục: ${err.detail || "Không rõ nguyên nhân"}`);
+                                addLog("error", `Lỗi lưu thư mục: ${err.detail || "Không rõ nguyên nhân"}`);
                               }
+                            } catch (err) {
+                              addLog("error", `Lỗi lưu thư mục: ${err.message}`);
+                            } finally {
+                              setIsSavingConfig(false);
                             }
-                          } catch (err) {
-                            addLog("error", `Lỗi chọn thư mục: ${err.message}`);
-                          } finally {
-                            setIsSavingConfig(false);
-                          }
-                        }}
-                        disabled={isSavingConfig}
-                        style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <FolderOpen size={16} />
-                        <span>Chọn</span>
-                      </button>
+                          }}
+                          disabled={isSavingConfig}
+                          style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span>Lưu</span>
+                        </button>
+                      </div>
                     ) : (
                       <button
                         type="button"
@@ -1645,7 +1648,7 @@ export default function Home() {
               <table className="recent-table">
                 <thead>
                   <tr>
-                    <th>Ứng dụng (App)</th>
+                    <th>Tên tệp / Ứng dụng</th>
                     <th>Kênh</th>
                     <th>Khu vực</th>
                     <th>Định dạng</th>
@@ -1657,7 +1660,23 @@ export default function Home() {
                 <tbody>
                   {getFilteredReportData().map((row) => (
                     <tr key={row.id}>
-                      <td style={{ fontWeight: "600" }}>{row.app_name}</td>
+                      <td>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                          <span style={{ fontWeight: "600", fontSize: "13px", color: "var(--text-primary)", wordBreak: "break-all" }}>
+                            {row.video_name || "—"}
+                          </span>
+                          <span style={{ fontSize: "11px", color: "var(--text-secondary)", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px" }}>
+                            <span style={{ color: "var(--text-muted)" }}>App:</span>
+                            <span>{row.app_name}</span>
+                            {row.saved_path && (
+                              <>
+                                <span style={{ color: "var(--color-border)" }}>•</span>
+                                <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{row.saved_path}</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      </td>
                       <td>
                         <span className={`sidebar-badge ${row.platform === "Facebook" ? "success" : row.platform === "TikTok" ? "error" : "idle"}`}>
                           {row.platform}
@@ -1676,6 +1695,7 @@ export default function Home() {
                   ))}
                 </tbody>
               </table>
+
             </div>
           </div>
         )}

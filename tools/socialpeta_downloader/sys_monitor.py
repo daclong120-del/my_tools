@@ -81,7 +81,8 @@ class SystemMonitor:
                         self.max_threads_recommended = min(self.max_threads_user, self.max_threads_recommended + 1)
                         
             except Exception as e:
-                print(f"[-] Loi trong luong giam sat he thong: {e}")
+                import traceback
+                print(f"[-] Loi trong luong giam sat he thong: {e}\n{traceback.format_exc()}")
                 
             time.sleep(self.check_interval)
 

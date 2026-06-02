@@ -9,20 +9,14 @@ import csv
 import time
 import requests
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Optional, Any
+from playwright.sync_api import sync_playwright
+from socialpeta_downloader.config import settings
+from socialpeta_downloader.core.protocols import IEngineContext
 
-class LegacyScraperMixin:
-    download_dir: str
-
-    if TYPE_CHECKING:
-        def log(self, level: str, message: str) -> None: ...
-        def extract_ad_id(self, url: str) -> Optional[str]: ...
-        def _get_playwright_context(self, p: Any) -> Any: ...
-        def get_unique_filename(self, app_name: str) -> tuple[str, int]: ...
-        def _recursive_find_creatives(self, obj: Any) -> list[dict]: ...
-        def _parse_creative_item(self, raw_item: dict) -> dict: ...
-        def _save_item_state(self, item: dict) -> None: ...
-        def append_to_csv(self, item: dict) -> None: ...
+class LegacyScraperService:
+    def __init__(self, context: Optional[IEngineContext] = None):
+        self.context = context
 
     def is_safe_url(self, url: str) -> bool:
         from urllib.parse import urlparse
@@ -40,10 +34,13 @@ class LegacyScraperMixin:
         return False
 
     def download_video_file(self, url: str, dest_path: str) -> bool:
+        if not self.context:
+            return False
+            
         basename = os.path.basename(dest_path)
-        self.log("info", f"Bắt đầu tải file: {basename} ...")
+        self.context.utils_service.log("info", f"Bắt đầu tải file: {basename} ...")
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": "https://www.socialpeta.com/"
         }
         for attempt in range(4):
@@ -54,18 +51,21 @@ class LegacyScraperMixin:
                         for chunk in response.iter_content(chunk_size=16384):
                             if chunk:
                                 f.write(chunk)
-                    self.log("success", f"Đã tải thành công file: {basename}")
+                    self.context.utils_service.log("success", f"Đã tải thành công file: {basename}")
                     return True
                 time.sleep(2 ** attempt)
             except Exception as e:
-                self.log("warning", f"Lỗi tải file {basename} (lần thử {attempt+1}): {e}")
+                self.context.utils_service.log("warning", f"Lỗi tải file {basename} (lần thử {attempt+1}): {e}")
                 time.sleep(2 ** attempt)
-        self.log("error", f"Tải file thất bại sau 4 lần thử: {basename}")
+        self.context.utils_service.log("error", f"Tải file thất bại sau 4 lần thử: {basename}")
         return False
 
     def download_single_ad(self, url: str) -> dict:
+        if not self.context:
+            return {}
+            
         print(f"[*] Dang tai single ad tu URL: {url}")
-        ad_id = self.extract_ad_id(url) or "unknown"
+        ad_id = self.context.utils_service.extract_ad_id(url) or "unknown"
         result = {
             "ad_id": ad_id,
             "ad_url": url,
@@ -82,7 +82,7 @@ class LegacyScraperMixin:
             
         with sync_playwright() as p:
             try:
-                context = self._get_playwright_context(p)
+                context = self.context.utils_service._get_playwright_context(p)
                 page = context.pages[0] if context.pages else context.new_page()
                 
                 video_url_found = []
@@ -123,8 +123,8 @@ class LegacyScraperMixin:
                 if video_url:
                     result["video_url"] = video_url
                     app_name = title or "SingleAd"
-                    final_filename, stt = self.get_unique_filename(app_name)
-                    final_path = os.path.join(self.download_dir, final_filename)
+                    final_filename, stt = self.context.utils_service.get_unique_filename(app_name)
+                    final_path = os.path.join(self.context.download_dir, final_filename)
                     
                     dl_ok = self.download_video_file(video_url, final_path)
                     if dl_ok:
@@ -148,6 +148,9 @@ class LegacyScraperMixin:
         return result
 
     def scrape_search_page_and_download(self, url: str, max_results: int = 10) -> list:
+        if not self.context:
+            return []
+            
         print(f"[*] Dang quet trang tim kiem: {url} (Gioi han: {max_results})")
         results = []
         if not self.is_safe_url(url):
@@ -157,16 +160,16 @@ class LegacyScraperMixin:
         
         with sync_playwright() as p:
             try:
-                context = self._get_playwright_context(p)
+                context = self.context.utils_service._get_playwright_context(p)
                 page = context.pages[0] if context.pages else context.new_page()
                 
                 def on_resp(response):
                     if "/creative/list" in response.url or "/creative-rank/list" in response.url:
                         try:
                             body = response.json()
-                            items = self._recursive_find_creatives(body)
+                            items = self.context.utils_service._recursive_find_creatives(body)
                             for raw_item in items:
-                                parsed = self._parse_creative_item(raw_item)
+                                parsed = self.context.utils_service._parse_creative_item(raw_item)
                                 if parsed["ad_id"] and parsed not in captured_items:
                                     captured_items.append(parsed)
                         except Exception:
@@ -208,8 +211,8 @@ class LegacyScraperMixin:
                 results.append(res_dict)
                 continue
                 
-            final_filename, stt = self.get_unique_filename(title)
-            final_path = os.path.join(self.download_dir, final_filename)
+            final_filename, stt = self.context.utils_service.get_unique_filename(title)
+            final_path = os.path.join(self.context.download_dir, final_filename)
             
             dl_ok = self.download_video_file(video_url, final_path)
             if dl_ok:
@@ -225,8 +228,8 @@ class LegacyScraperMixin:
                     "saved_path": final_path,
                     "file_size": os.path.getsize(final_path) if os.path.exists(final_path) else 0
                 }
-                self._save_item_state(item_state)
-                self.append_to_csv(item_state)
+                self.context.utils_service._save_item_state(item_state)
+                self.context.session_service.append_to_csv(item_state)
             else:
                 res_dict["error"] = "Tải file video CDN thất bại."
                 

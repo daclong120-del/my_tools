@@ -9,31 +9,25 @@ import time
 import traceback
 import queue
 import threading
-from typing import TYPE_CHECKING, Any, Dict
+from typing import Optional
+from socialpeta_downloader.core.protocols import IEngineContext
 
-class YoutubeMixin:
-    youtube_extract_queue: queue.Queue
-    active_page: Any
-    pending_downloads: queue.PriorityQueue
-    tab_youtube_queues: Dict[int, queue.Queue]
-    tab_states: Dict[int, Dict[str, Any]]
-    stats_lock: threading.Lock
-    stats: Dict[str, int]
-
-    if TYPE_CHECKING:
-        def _save_item_state(self, item: dict) -> None:
-            ...
-
+class YoutubeService:
+    def __init__(self, context: Optional[IEngineContext] = None):
+        self.context = context
 
     def _youtube_extract_worker(self):
         """
         Runs on Stream 1 Playwright thread to execute UC-03 click flow safely
         """
-        if self.youtube_extract_queue.empty() or not self.active_page:
+        if not self.context:
             return
             
-        page = self.active_page
-        item = self.youtube_extract_queue.get()
+        if self.context.youtube_extract_queue.empty() or not self.context.active_page:
+            return
+            
+        page = self.context.active_page
+        item = self.context.youtube_extract_queue.get()
         ad_id = item["ad_id"]
         
         print(f"[YouTube] Dang lay URL cho card {ad_id}")
@@ -186,8 +180,11 @@ class YoutubeMixin:
                 
                 time.sleep(2)
             except Exception as e:
-                print(f"[YouTube Debug Error] Loi o attempt {attempt}: {e}")
-                traceback.print_exc()
+                import traceback
+                if self.context:
+                    self.context.log("error", f"[YouTube Debug Error] Loi o attempt {attempt}: {e}\n{traceback.format_exc()}")
+                else:
+                    print(f"[YouTube Debug Error] Loi o attempt {attempt}: {e}\n{traceback.format_exc()}")
                 time.sleep(1)
                 
             # Close modal if open before next retry (ESC key)
@@ -220,16 +217,19 @@ class YoutubeMixin:
         else:
             item["status"] = "failed"
             
-        self._save_item_state(item)
+        self.context.utils_service._save_item_state(item)
         
         if success:
-            self.pending_downloads.put((time.time(), item["fpath"]))
+            self.context.pending_downloads.put((time.time(), item["fpath"]))
 
     def _youtube_extract_worker_for_tab(self, tab_index: int, page):
         """
         Processes YouTube iframe extraction for this specific tab page.
         """
-        q = self.tab_youtube_queues.get(tab_index)
+        if not self.context:
+            return
+            
+        q = self.context.tab_youtube_queues.get(tab_index)
         if not q or q.empty():
             return
             
@@ -374,8 +374,11 @@ class YoutubeMixin:
                         break
                 time.sleep(0.5)
             except Exception as e:
-                print(f"[YouTube Debug Error] Loi o attempt {attempt} (tab {tab_index}): {e}")
-                traceback.print_exc()
+                import traceback
+                if self.context:
+                    self.context.log("error", f"[YouTube Debug Error] Loi o attempt {attempt} (tab {tab_index}): {e}\n{traceback.format_exc()}")
+                else:
+                    print(f"[YouTube Debug Error] Loi o attempt {attempt} (tab {tab_index}): {e}\n{traceback.format_exc()}")
                 time.sleep(1)
                 
             try:
@@ -404,12 +407,10 @@ class YoutubeMixin:
                 dur = 0
             print(f"[YouTube] Dat media_type = youtube_video cho URL: {youtube_url}, duration: {dur}s (tab {tab_index})")
             
-            self.tab_states[tab_index]["scraped_count"] += 1
-            with self.stats_lock:
-                self.stats["total_sniffed"] += 1
+            self.context.tab_states[tab_index]["scraped_count"] += 1
         else:
             item["status"] = "failed"
             
-        self._save_item_state(item)
+        self.context.utils_service._save_item_state(item)
         if success and youtube_url:
-            self.pending_downloads.put((time.time(), item["fpath"]))
+            self.context.pending_downloads.put((time.time(), item["fpath"]))
