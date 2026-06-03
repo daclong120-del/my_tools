@@ -82,29 +82,57 @@ class YoutubeService:
                             const imgs = Array.from(c.querySelectorAll('img'));
                             let hashMatched = false;
                             for (const img of imgs) {
-                                if (img && img.src) {
-                                    if (imgHash && img.src.includes(imgHash)) {
-                                        hashMatched = true;
-                                        break;
-                                    }
-                                    if (vidHash && img.src.includes(vidHash)) {
-                                        hashMatched = true;
-                                        break;
+                                const urls = [
+                                    img.src,
+                                    img.getAttribute('src'),
+                                    img.getAttribute('data-src'),
+                                    img.getAttribute('data-original'),
+                                    img.getAttribute('lazy-src'),
+                                    img.getAttribute('data-lazy-src')
+                                ];
+                                for (const url of urls) {
+                                    if (url) {
+                                        if (imgHash && url.includes(imgHash)) {
+                                            hashMatched = true;
+                                            break;
+                                        }
+                                        if (vidHash && url.includes(vidHash)) {
+                                            hashMatched = true;
+                                            break;
+                                        }
                                     }
                                 }
+                                if (hashMatched) break;
                             }
                             
-                            const videos = Array.from(c.querySelectorAll('video'));
-                            for (const video of videos) {
-                                if (video && video.src) {
-                                    if (vidHash && video.src.includes(vidHash)) {
-                                        hashMatched = true;
-                                        break;
+                            if (!hashMatched) {
+                                const videos = Array.from(c.querySelectorAll('video'));
+                                for (const video of videos) {
+                                    const urls = [
+                                        video.src,
+                                        video.getAttribute('src'),
+                                        video.getAttribute('data-src'),
+                                        video.getAttribute('poster'),
+                                        video.getAttribute('data-poster')
+                                    ];
+                                    video.querySelectorAll('source').forEach(srcEl => {
+                                        urls.push(srcEl.src);
+                                        urls.push(srcEl.getAttribute('src'));
+                                        urls.push(srcEl.getAttribute('data-src'));
+                                    });
+                                    for (const url of urls) {
+                                        if (url) {
+                                            if (vidHash && url.includes(vidHash)) {
+                                                hashMatched = true;
+                                                break;
+                                            }
+                                            if (imgHash && url.includes(imgHash)) {
+                                                hashMatched = true;
+                                                break;
+                                            }
+                                        }
                                     }
-                                    if (imgHash && video.src.includes(imgHash)) {
-                                        hashMatched = true;
-                                        break;
-                                    }
+                                    if (hashMatched) break;
                                 }
                             }
                             
@@ -213,14 +241,14 @@ class YoutubeService:
                     found_url = ""
                     for poll in range(12):  # 12 * 500ms = 6000ms
                         # 1. Check anchor link
-                        a_loc = page.locator("a[href*='youtube.com'], a[href*='youtu.be']").first
-                        if a_loc.is_visible():
+                        a_loc = page.locator("a[href*='youtube.com'], a[href*='youtu.be'], a[href*='youtube-nocookie.com']").first
+                        if (a_loc.is_visible()):
                             href = a_loc.get_attribute("href")
                             if href:
                                 found_url = href.strip()
                                 break
                         # 2. Check iframe
-                        iframe_loc = page.locator("iframe[src*='youtube.com'], iframe[src*='youtu.be']").first
+                        iframe_loc = page.locator("iframe[src*='youtube.com'], iframe[src*='youtu.be'], iframe[src*='youtube-nocookie.com']").first
                         if iframe_loc.is_visible():
                             src = iframe_loc.get_attribute("src")
                             if src:
@@ -232,7 +260,7 @@ class YoutubeService:
                         # Fallback: check body text
                         try:
                             body_text = page.locator("body").inner_text()
-                            urls = re.findall(r'https?://[^\s<>"]*?youtu[^\s<>"]*', body_text)
+                            urls = re.findall(r'https?://[^\s<>"]*?(?:youtu|youtube-nocookie)[^\s<>"]*', body_text)
                             if urls:
                                 found_url = urls[0].strip()
                         except Exception:
@@ -273,13 +301,11 @@ class YoutubeService:
         except Exception:
             pass
 
-        if not success:
-            print("[YouTube] Khong tim thay URL")
-            
-        item["youtube_url"] = youtube_url
-        item["video_url"] = youtube_url
+        original_video_url = item.get("video_url")
         
         if youtube_url:
+            item["youtube_url"] = youtube_url
+            item["video_url"] = youtube_url
             item["media_type"] = "youtube_video"
             try:
                 raw_dur = item.get("duration")
@@ -287,13 +313,21 @@ class YoutubeService:
             except ValueError:
                 dur = 0
             print(f"[YouTube] Dat media_type = youtube_video cho URL: {youtube_url}, duration: {dur}s")
-        else:
-            item["status"] = "failed"
-            
-        self.context.utils_service._save_item_state(item)
-        
-        if success:
+            self.context.utils_service._save_item_state(item)
             self.context.pending_downloads.put((time.time(), item["fpath"]))
+        else:
+            if original_video_url and not any(x in original_video_url.lower() for x in ["youtube.com", "youtu.be", "youtube-nocookie.com"]):
+                print(f"[YouTube Fallback] Khong lay duoc link YouTube cho Ad {ad_id}, rollback ve video CDN: {original_video_url}")
+                item["media_type"] = "video"
+                item["status"] = "pending"
+                self.context.utils_service._save_item_state(item)
+                self.context.pending_downloads.put((time.time(), item["fpath"]))
+            else:
+                print(f"[YouTube] Khong tim thay URL, ad {ad_id} danh dau that bai")
+                item["youtube_url"] = ""
+                item["video_url"] = ""
+                item["status"] = "failed"
+                self.context.utils_service._save_item_state(item)
 
     def _youtube_extract_worker_for_tab(self, tab_index: int, page):
         """
@@ -359,29 +393,57 @@ class YoutubeService:
                             const imgs = Array.from(c.querySelectorAll('img'));
                             let hashMatched = false;
                             for (const img of imgs) {
-                                if (img && img.src) {
-                                    if (imgHash && img.src.includes(imgHash)) {
-                                        hashMatched = true;
-                                        break;
-                                    }
-                                    if (vidHash && img.src.includes(vidHash)) {
-                                        hashMatched = true;
-                                        break;
+                                const urls = [
+                                    img.src,
+                                    img.getAttribute('src'),
+                                    img.getAttribute('data-src'),
+                                    img.getAttribute('data-original'),
+                                    img.getAttribute('lazy-src'),
+                                    img.getAttribute('data-lazy-src')
+                                ];
+                                for (const url of urls) {
+                                    if (url) {
+                                        if (imgHash && url.includes(imgHash)) {
+                                            hashMatched = true;
+                                            break;
+                                        }
+                                        if (vidHash && url.includes(vidHash)) {
+                                            hashMatched = true;
+                                            break;
+                                        }
                                     }
                                 }
+                                if (hashMatched) break;
                             }
                             
-                            const videos = Array.from(c.querySelectorAll('video'));
-                            for (const video of videos) {
-                                if (video && video.src) {
-                                    if (vidHash && video.src.includes(vidHash)) {
-                                        hashMatched = true;
-                                        break;
+                            if (!hashMatched) {
+                                const videos = Array.from(c.querySelectorAll('video'));
+                                for (const video of videos) {
+                                    const urls = [
+                                        video.src,
+                                        video.getAttribute('src'),
+                                        video.getAttribute('data-src'),
+                                        video.getAttribute('poster'),
+                                        video.getAttribute('data-poster')
+                                    ];
+                                    video.querySelectorAll('source').forEach(srcEl => {
+                                        urls.push(srcEl.src);
+                                        urls.push(srcEl.getAttribute('src'));
+                                        urls.push(srcEl.getAttribute('data-src'));
+                                    });
+                                    for (const url of urls) {
+                                        if (url) {
+                                            if (vidHash && url.includes(vidHash)) {
+                                                hashMatched = true;
+                                                break;
+                                            }
+                                            if (imgHash && url.includes(imgHash)) {
+                                                hashMatched = true;
+                                                break;
+                                            }
+                                        }
                                     }
-                                    if (imgHash && video.src.includes(imgHash)) {
-                                        hashMatched = true;
-                                        break;
-                                    }
+                                    if (hashMatched) break;
                                 }
                             }
                             
@@ -488,13 +550,13 @@ class YoutubeService:
                 if clicked:
                     found_url = ""
                     for poll in range(6):  # 6 * 500ms = 3000ms
-                        a_loc = page.locator("a[href*='youtube.com'], a[href*='youtu.be']").first
-                        if a_loc.is_visible():
+                        a_loc = page.locator("a[href*='youtube.com'], a[href*='youtu.be'], a[href*='youtube-nocookie.com']").first
+                        if (a_loc.is_visible()):
                             href = a_loc.get_attribute("href")
                             if href:
                                 found_url = href.strip()
                                 break
-                        iframe_loc = page.locator("iframe[src*='youtube.com'], iframe[src*='youtu.be']").first
+                        iframe_loc = page.locator("iframe[src*='youtube.com'], iframe[src*='youtu.be'], iframe[src*='youtube-nocookie.com']").first
                         if iframe_loc.is_visible():
                             src = iframe_loc.get_attribute("src")
                             if src:
@@ -505,7 +567,7 @@ class YoutubeService:
                     if not found_url:
                         try:
                             body_text = page.locator("body").inner_text()
-                            urls = re.findall(r'https?://[^\s<>"]*?youtu[^\s<>"]*', body_text)
+                            urls = re.findall(r'https?://[^\s<>"]*?(?:youtu|youtube-nocookie)[^\s<>"]*', body_text)
                             if urls:
                                 found_url = urls[0].strip()
                         except Exception:
@@ -543,13 +605,11 @@ class YoutubeService:
         except Exception:
             pass
 
-        if not success:
-            print("[YouTube] Khong tim thay URL")
-            
-        item["youtube_url"] = youtube_url
-        item["video_url"] = youtube_url
+        original_video_url = item.get("video_url")
         
         if youtube_url:
+            item["youtube_url"] = youtube_url
+            item["video_url"] = youtube_url
             item["media_type"] = "youtube_video"
             try:
                 raw_dur = item.get("duration")
@@ -559,9 +619,18 @@ class YoutubeService:
             print(f"[YouTube] Dat media_type = youtube_video cho URL: {youtube_url}, duration: {dur}s (tab {tab_index})")
             
             self.context.tab_states[tab_index]["scraped_count"] += 1
-        else:
-            item["status"] = "failed"
-            
-        self.context.utils_service._save_item_state(item)
-        if success and youtube_url:
+            self.context.utils_service._save_item_state(item)
             self.context.pending_downloads.put((time.time(), item["fpath"]))
+        else:
+            if original_video_url and not any(x in original_video_url.lower() for x in ["youtube.com", "youtu.be", "youtube-nocookie.com"]):
+                print(f"[YouTube Fallback] Khong lay duoc link YouTube cho Ad {ad_id}, rollback ve video CDN: {original_video_url}")
+                item["media_type"] = "video"
+                item["status"] = "pending"
+                self.context.utils_service._save_item_state(item)
+                self.context.pending_downloads.put((time.time(), item["fpath"]))
+            else:
+                print(f"[YouTube] Khong tim thay URL, ad {ad_id} danh dau that bai")
+                item["youtube_url"] = ""
+                item["video_url"] = ""
+                item["status"] = "failed"
+                self.context.utils_service._save_item_state(item)

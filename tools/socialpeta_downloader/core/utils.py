@@ -583,8 +583,8 @@ class UtilsService:
         
         media_type = "video"
         is_youtube = (platform == "youtube" or
-                      "youtube" in video_url.lower() or "youtu.be" in video_url.lower() or 
-                      "youtube" in youtube_url.lower() or "youtu.be" in youtube_url.lower() or
+                      "youtube" in video_url.lower() or "youtu.be" in video_url.lower() or "youtube-nocookie.com" in video_url.lower() or
+                      "youtube" in youtube_url.lower() or "youtu.be" in youtube_url.lower() or "youtube-nocookie.com" in youtube_url.lower() or
                       (not video_url and not youtube_url and "youtube" in publisher.lower()))
                       
         if is_youtube:
@@ -594,12 +594,12 @@ class UtilsService:
             media_type = "image"
         elif is_youtube:
             is_real_youtube_link = (
-                (youtube_url and ("youtube" in youtube_url.lower() or "youtu.be" in youtube_url.lower())) or
-                (video_url and ("youtube" in video_url.lower() or "youtu.be" in video_url.lower()))
+                (youtube_url and ("youtube" in youtube_url.lower() or "youtu.be" in youtube_url.lower() or "youtube-nocookie.com" in youtube_url.lower())) or
+                (video_url and ("youtube" in video_url.lower() or "youtu.be" in video_url.lower() or "youtube-nocookie.com" in video_url.lower()))
             )
             if is_real_youtube_link:
                 media_type = "youtube_video"
-            elif not youtube_url and video_url and not ("youtube" in video_url.lower() or "youtu.be" in video_url.lower()):
+            elif not youtube_url and video_url and not ("youtube" in video_url.lower() or "youtu.be" in video_url.lower() or "youtube-nocookie.com" in video_url.lower()):
                 media_type = "video"
             else:
                 media_type = "youtube_click_required"

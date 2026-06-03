@@ -245,10 +245,30 @@ class SnifferService:
                 print(f"[*] Tab {tab_index}: Phanh goi tin Trang {page_num} tra ve danh sach rong. Dung pagination som.")
                 break
                 
-            # 1. Upgrade youtube items using DOM icon immediately on page load
+            # Wait 1.0 second for the DOM elements to start rendering
+            time.sleep(1.0)
+            
+            # 1. Scroll page first to render cards and load lazy-loaded image/video CDN resources
+            print(f"[*] Tab {tab_index}: Dang scroll de render cards va load anh tren Trang {page_num}...")
+            try:
+                for i in range(1, 13):
+                    if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
+                        break
+                    page.evaluate(f"window.scrollTo(0, {i * 1000})")
+                    time.sleep(0.2)
+                page.evaluate("window.scrollTo(0, 0)")
+                time.sleep(0.5)
+            except Exception as e:
+                import traceback
+                if self.context:
+                    self.context.log("error", f"[-] Tab {tab_index} Scroll error: {e}\n{traceback.format_exc()}")
+                else:
+                    print(f"[-] Tab {tab_index} Scroll error: {e}\n{traceback.format_exc()}")
+
+            # 2. Upgrade youtube items using DOM icon
             self._upgrade_youtube_items_via_dom(tab_index, page)
             
-            # 2. Extract YouTube items before anything else
+            # 3. Extract YouTube items before anything else
             q = self.context.tab_youtube_queues.get(tab_index)
             if q and not q.empty():
                 print(f"[*] Tab {tab_index}: Phat hien {q.qsize()} quang cao YouTube can click trich xuat inline...")
@@ -257,7 +277,7 @@ class SnifferService:
                         break
                     self.context.youtube_service._youtube_extract_worker_for_tab(tab_index, page)
 
-            # 3. Queue deferred video CDN items into pending_downloads
+            # 4. Queue deferred video CDN items into pending_downloads
             tab_dir = os.path.join(self.context.temp_queue_dir, f"tab{tab_index}")
             new_cdn_videos_count = 0
             if os.path.exists(tab_dir):
@@ -276,23 +296,6 @@ class SnifferService:
             if new_cdn_videos_count > 0:
                 self.context.tab_states[tab_index]["scraped_count"] += new_cdn_videos_count
                 print(f"[+] Tab {tab_index}: Da day {new_cdn_videos_count} video CDN thuc su vao hang doi tai.")
-
-            # 4. Scroll page to load image/video CDN resources
-            print(f"[*] Tab {tab_index}: Dang scroll de load anh cho cac card con lai tren Trang {page_num}...")
-            try:
-                for i in range(1, 13):
-                    if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
-                        break
-                    page.evaluate(f"window.scrollTo(0, {i * 1000})")
-                    time.sleep(0.25)
-                page.evaluate("window.scrollTo(0, 0)")
-                time.sleep(0.8)
-            except Exception as e:
-                import traceback
-                if self.context:
-                    self.context.log("error", f"[-] Tab {tab_index} Scroll error: {e}\n{traceback.format_exc()}")
-                else:
-                    print(f"[-] Tab {tab_index} Scroll error: {e}\n{traceback.format_exc()}")
  
             time.sleep(2)
             
@@ -380,12 +383,36 @@ class SnifferService:
                     if (hasYoutubeIcon) {
                         const hashes = [];
                         c.querySelectorAll('img').forEach(img => {
-                            const h = getHash(img.src);
-                            if (h) hashes.push(h);
+                            const urls = [
+                                img.src,
+                                img.getAttribute('src'),
+                                img.getAttribute('data-src'),
+                                img.getAttribute('data-original'),
+                                img.getAttribute('lazy-src'),
+                                img.getAttribute('data-lazy-src')
+                            ];
+                            urls.forEach(url => {
+                                const h = getHash(url);
+                                if (h) hashes.push(h);
+                            });
                         });
                         c.querySelectorAll('video').forEach(vid => {
-                            const h = getHash(vid.src);
-                            if (h) hashes.push(h);
+                            const urls = [
+                                vid.src,
+                                vid.getAttribute('src'),
+                                vid.getAttribute('data-src'),
+                                vid.getAttribute('poster'),
+                                vid.getAttribute('data-poster')
+                            ];
+                            vid.querySelectorAll('source').forEach(srcEl => {
+                                urls.push(srcEl.src);
+                                urls.push(srcEl.getAttribute('src'));
+                                urls.push(srcEl.getAttribute('data-src'));
+                            });
+                            urls.forEach(url => {
+                                const h = getHash(url);
+                                if (h) hashes.push(h);
+                            });
                         });
                         results.push({
                             hashes: hashes,
