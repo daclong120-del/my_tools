@@ -10,6 +10,7 @@ class IEngineContext(Protocol):
     session_dir: str
     csv_path: str
     audit_csv_path: str
+    download_mode: str
     
     # State control
     running: bool

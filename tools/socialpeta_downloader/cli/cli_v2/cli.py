@@ -63,7 +63,7 @@ RESET = "\033[0m"
 
 
 class AppState:
-    download_dir = r"D:\Downloads\SocialPeta_Workspace"
+    download_dir = ""
     chrome_port = 9222
     thread_count = 3
 
@@ -283,7 +283,7 @@ def configure_settings(core):
 def main_menu():
     core = SocialPetaDownloaderCore()
     # Force defaults at startup
-    core.update_download_dir(AppState.download_dir)
+    AppState.download_dir = core.download_dir
 
     while True:
         console.clear()

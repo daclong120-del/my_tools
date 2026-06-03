@@ -1,7 +1,7 @@
 # SocialPeta Downloader
 
 > Tổng hợp kiến thức về công cụ tự động hóa tải video SocialPeta trong dự án.
-> Cập nhật lần cuối: 2026-06-02
+> Cập nhật lần cuối: 2026-06-03
 
 ---
 
@@ -235,6 +235,13 @@
 - **Fix**: Lỗi đã được xử lý dự phòng bằng khối `try...except` trả về giá trị `-1.0` an toàn nên không gây sập ứng dụng.
 - **Files liên quan**: `tools/socialpeta_downloader/core/deduplication.py`
 
+### Lỗi nạp _greenlet.pyd (LoadLibraryExW ImportError) trên máy không cài VC++ Runtime
+- **Ngày**: 2026-06-03
+- **Vấn đề**: File `.exe` đóng gói bằng Nuitka khi chạy trên máy tính khác (máy ảo sạch, Windows Sandbox, hoặc máy chưa cài Visual C++ Redistributable) bị crash ngay khi khởi động và báo lỗi: `ImportError: LoadLibraryExW '...\_greenlet.pyd' failed: The specified module could not be found.`
+- **Root cause**: Trình biên dịch Nuitka không tự động đóng gói các thư viện liên kết động C++ tiêu chuẩn như `msvcp140.dll` và các file liên quan (trong khi file `_greenlet.pyd` của Playwright biên dịch bằng C++ và yêu cầu chúng).
+- **Fix**: Sao chép các file DLL C++ Runtime tiêu chuẩn (`msvcp140.dll`, `msvcp140_1.dll`, `msvcp140_2.dll`, `msvcp140_atomic_wait.dll`, `msvcp140_codecvt_ids.dll`, và `vcruntime140_threads.dll`) từ thư mục `C:\Windows\System32` của máy biên dịch trực tiếp vào thư mục gốc chứa file thực thi `.exe` của bản phân phối độc lập (dist).
+- **Files liên quan**: `fast_build_cli_v2.bat`
+
 ---
 
 ## How-To
@@ -329,3 +336,8 @@
 - **Ngày**: 2026-06-02
 - **Chi tiết**: Sử dụng một đối tượng trạng thái ứng dụng (`AppState` hoặc local variables) để lưu trữ tạm thời các thiết lập cổng debug, thư mục lưu trữ và số luồng xử lý do người dùng ghi đè thủ công tại CLI. Truyền các giá trị động này trực tiếp vào các service thay vì ghi đè biến cấu hình toàn cục, duy trì cấu trúc cấu hình gốc sạch sẽ.
 - **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/cli.py`
+
+### Bundling MSVC C++ Redistributable DLLs for Standalone Nuitka Builds (Tích hợp VC++ Runtime vào bản đóng gói Nuitka)
+- **Ngày**: 2026-06-03
+- **Chi tiết**: Đối với các ứng dụng Python đóng gói standalone có sử dụng các thư viện C-extension như Playwright (`greenlet`), việc phân phối ứng dụng sang máy khách sạch thường bị lỗi DLL load failed do thiếu Microsoft C++ Runtime. Để giải quyết triệt để mà không bắt người dùng cài đặt gói Redistributable hệ thống, ta sao chép các tệp DLL runtime tiêu chuẩn của MSVC trực tiếp vào thư mục phân phối chứa tệp tin thực thi. Trình nạp của Windows sẽ ưu tiên tìm và tải các DLL này từ thư mục hiện hành của tiến trình.
+- **Files liên quan**: `fast_build_cli_v2.bat`

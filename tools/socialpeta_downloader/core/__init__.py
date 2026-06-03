@@ -35,22 +35,19 @@ class SocialPetaDownloaderCore:
     temp_download_dir: str
     temp_queue_dir: str
     session_dir: str
+    download_mode: str
 
     def get_default_download_dir(self) -> str:
-        import sys
-        if getattr(sys, 'frozen', False):
-            if os.name == 'nt':
-                import winreg
-                try:
-                    sub_key = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
-                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub_key) as key:
-                        downloads_dir = winreg.QueryValueEx(key, "{374DE290-123F-4565-9164-39C4925E467B}")[0]
-                        return os.path.join(downloads_dir, "SocialPeta_Downloader")
-                except Exception:
-                    pass
-            return os.path.join(os.path.expanduser("~"), "Downloads", "SocialPeta_Downloader")
-        else:
-            return r"D:\Python\my_tools\data\videos"
+        if os.name == 'nt':
+            import winreg
+            try:
+                sub_key = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub_key) as key:
+                    downloads_dir = winreg.QueryValueEx(key, "{374DE290-123F-4565-9164-39C4925E467B}")[0]
+                    return os.path.join(downloads_dir, "SocialPeta_Downloader")
+            except Exception:
+                pass
+        return os.path.join(os.path.expanduser("~"), "Downloads", "SocialPeta_Downloader")
 
     def update_download_dir(self, new_dir: str):
         old_download_dir = getattr(self, "download_dir", None)
@@ -124,6 +121,7 @@ class SocialPetaDownloaderCore:
 
     def __init__(self):
         self.session_dir = settings.SESSION_DIR
+        self.download_mode = "all"
         
         # Load config to resolve self.download_dir and other paths
         self.load_config()
