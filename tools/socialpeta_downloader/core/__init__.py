@@ -180,6 +180,8 @@ class SocialPetaDownloaderCore:
         self.tab_youtube_queues = {}
         self.active_page = None
         self.total_pages = None
+        self.current_page = 1
+        self.pagination_target_pages = 0
         self.last_packet_empty = False
 
         # Image deduplication cache

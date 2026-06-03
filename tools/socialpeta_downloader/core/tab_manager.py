@@ -431,6 +431,25 @@ class TabScanner:
                     self.context.youtube_service._youtube_extract_worker_for_tab(tab_index, page)
                     time.sleep(0.5)
                 
+                # Day not cac video CDN pending con sot (neu co) truoc khi dung scraper
+                tab_dir = os.path.join(self.context.temp_queue_dir, f"tab{tab_index}")
+                new_cdn_videos_count = 0
+                if os.path.exists(tab_dir):
+                    for fname in os.listdir(tab_dir):
+                        if fname.endswith(".json"):
+                            fpath = os.path.join(tab_dir, fname)
+                            try:
+                                ad_id = fname[:-5]
+                                db_item = self.context.utils_service.db_get_item(ad_id)
+                                if db_item and db_item.get("status") == "pending" and db_item.get("media_type") == "video":
+                                    self.context.pending_downloads.put((time.time(), fpath))
+                                    new_cdn_videos_count += 1
+                            except Exception:
+                                pass
+                if new_cdn_videos_count > 0:
+                    self.context.tab_states[tab_index]["scraped_count"] += new_cdn_videos_count
+                    print(f"[+] Tab {tab_index}: Da day not {new_cdn_videos_count} video CDN pending con lai vao hang doi tai.")
+                
                 self.context.tab_running_events[tab_index].clear()
                     
             except Exception as e:

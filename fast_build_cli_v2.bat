@@ -12,10 +12,20 @@ set PYTHONIOENCODING=utf-8
 :: Goi MSVC Compiler x64
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 
-:: Xoa thu muc build cu de tranh xung dot va loi __constants.h
-if exist "build\cli.build" rd /s /q "build\cli.build"
-if exist "build\cli.dist" rd /s /q "build\cli.dist"
-if exist "build\fast_build_cli_V2_socialpetaDownloader" rd /s /q "build\fast_build_cli_V2_socialpetaDownloader"
+:: Avoid Pending Deletion lock on Windows by renaming before deleting
+set "RANDVAL=%RANDOM%"
+if exist "build\cli.build" (
+    ren "build\cli.build" "cli.build.old.%RANDVAL%"
+    rd /s /q "build\cli.build.old.%RANDVAL%"
+)
+if exist "build\cli.dist" (
+    ren "build\cli.dist" "cli.dist.old.%RANDVAL%"
+    rd /s /q "build\cli.dist.old.%RANDVAL%"
+)
+if exist "build\fast_build_cli_V2_socialpetaDownloader" (
+    ren "build\fast_build_cli_V2_socialpetaDownloader" "fast_build_cli_V2_socialpetaDownloader.old.%RANDVAL%"
+    rd /s /q "build\fast_build_cli_V2_socialpetaDownloader.old.%RANDVAL%"
+)
 
 echo ===================================================
 echo [2/4] Bat dau bien dich bang Nuitka 10 luong (Vui long doi)...

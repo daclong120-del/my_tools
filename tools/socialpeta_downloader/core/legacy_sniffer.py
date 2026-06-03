@@ -20,6 +20,12 @@ class LegacySnifferService:
         if not self.context:
             return
             
+        target_pages = getattr(self.context, "pagination_target_pages", 0)
+        current_page = getattr(self.context, "current_page", 1)
+        if target_pages and target_pages > 0 and current_page > target_pages:
+            self.context.page_packet_received.set()
+            return
+            
         try:
             items = self.context.utils_service._recursive_find_creatives(data)
             
@@ -195,6 +201,7 @@ class LegacySnifferService:
             
         print(f"[*] Trang hien tai tren browser: {active_page_num}")
         
+        self.context.pagination_target_pages = N
         if N == 1:
             if active_page_num == 1:
                 click_sequence = [2, 1]
@@ -206,45 +213,78 @@ class LegacySnifferService:
             else:
                 click_sequence = list(range(1, N + 1))
         
+        transition_successful = False
         for page_num in click_sequence:
             if not self.context.running:
                 break
                 
-            print(f"[*] Dang chuyen den Trang {page_num}...")
+            is_helper_page = (page_num > N)
+            if is_helper_page:
+                print(f"[*] Dang chuyen den helper page Trang {page_num}...")
+            else:
+                print(f"[*] Dang chuyen den Trang {page_num}...")
+            self.context.current_page = page_num
             
             self.context.page_packet_received.clear()
             self.context.last_packet_empty = False
             
             success = False
-            for retry in range(1, 4):
-                if not self.context.running:
-                    break
-                    
-                nav_ok = False
-                if page_num <= 5:
-                    nav_ok = self.context.utils_service._click_page_button(page, page_num)
-                else:
-                    nav_ok = self.context.utils_service._jump_to_page(page, page_num)
-                    
-                if not nav_ok:
-                    print(f"[-] Retry {retry}/3: Khong tim thay hoac khong the click Trang {page_num}. Dang scroll va thu lai...")
-                    try:
-                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        time.sleep(1.5)
-                    except Exception:
-                        pass
-                    continue
-                
-                received = self.context.page_packet_received.wait(timeout=15.0)
-                if received:
+            
+            # Special case: target is page 1, browser is on page 1, and transition failed/unavailable.
+            if page_num == 1 and active_page_num == 1 and not transition_successful:
+                print(f"[*] Su dung soft trigger de tai lai Trang 1 vi transition that bai hoac khong kha dung.")
+                if self.soft_trigger(page):
                     success = True
-                    print(f"[+] Da nhan phan hoi API cho Trang {page_num}.")
-                    break
-                else:
-                    print(f"[-] Retry {retry}/3: Timeout cho doi goi tin Trang {page_num}.")
+            else:
+                for retry in range(1, 4):
+                    if not self.context.running:
+                        break
+                        
+                    nav_ok = False
+                    if page_num <= 5:
+                        nav_ok = self.context.utils_service._click_page_button(page, page_num)
+                    else:
+                        nav_ok = self.context.utils_service._jump_to_page(page, page_num)
+                        
+                    if not nav_ok:
+                        if is_helper_page:
+                            print(f"[*] Helper transition page {page_num} khong ton tai. Bo qua transition.")
+                            break
+                        print(f"[-] Retry {retry}/3: Khong tim thay hoac khong the click Trang {page_num}. Dang scroll va thu lai...")
+                        try:
+                            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                            time.sleep(1.5)
+                        except Exception:
+                            pass
+                        continue
                     
+                    timeout_val = 10.0 if is_helper_page else 15.0
+                    received = self.context.page_packet_received.wait(timeout=timeout_val)
+                    if received:
+                        success = True
+                        if is_helper_page:
+                            transition_successful = True
+                            print(f"[+] Da chuyen thanh cong den helper page Trang {page_num}.")
+                        else:
+                            print(f"[+] Da nhan phan hoi API cho Trang {page_num}.")
+                        break
+                    else:
+                        if is_helper_page:
+                            success = True
+                            transition_successful = True
+                            print(f"[!] CANH BAO: Helper page {page_num} packet timeout, nhung van tiep tuc...")
+                            break
+                        print(f"[-] Retry {retry}/3: Timeout cho doi goi tin Trang {page_num}.")
+                        
             if not success:
+                if is_helper_page:
+                    print(f"[*] Chuyen den helper page that bai, tiep tuc sequence.")
+                    continue
                 print(f"[!] CANH BAO: That bai khi chuyen den Trang {page_num} sau 3 lan thu.")
+                continue
+                
+            if is_helper_page:
+                time.sleep(1.5)
                 continue
                 
             if self.context.last_packet_empty:
@@ -254,3 +294,53 @@ class LegacySnifferService:
             time.sleep(2)
             
         print("[+] Hoan thanh quynh trinh Pagination Sniffing.")
+
+    def soft_trigger(self, page) -> bool:
+        if not self.context:
+            return False
+            
+        if not page or page.is_closed():
+            print(f"[-] Page khong hop le hoac da dong.")
+            return False
+            
+        print(f"[*] Dang kich hoat Soft Trigger...")
+        self.context.page_packet_received.clear()
+            
+        for attempt in range(1, 4):
+            try:
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                time.sleep(1.0)
+                page.evaluate("window.scrollTo(0, 0)")
+                time.sleep(1.0)
+                
+                if self.context.page_packet_received.is_set():
+                    print(f"[+] Soft Trigger thanh cong o lan thu {attempt}!")
+                    return True
+                    
+                search_selectors = [
+                    "button.ant-btn-primary:has-text('Search')",
+                    "button.el-button--primary:has-text('Tìm kiếm')",
+                    "button:has-text('Search')",
+                    "button:has-text('Tìm kiếm')",
+                    ".search-btn",
+                    ".search-button"
+                ]
+                for sel in search_selectors:
+                    try:
+                        loc = page.locator(sel).first
+                        if loc.is_visible() and loc.is_enabled():
+                            loc.click()
+                            time.sleep(2.0)
+                            break
+                    except Exception:
+                        pass
+                        
+                if self.context.page_packet_received.is_set():
+                    print(f"[+] Soft Trigger thanh cong o lan thu {attempt}!")
+                    return True
+            except Exception as e:
+                import traceback
+                print(f"[-] Soft Trigger attempt {attempt} failed: {e}\n{traceback.format_exc()}")
+                
+        print(f"[!] CANH BAO: Soft Trigger that bai sau 3 lan thu.")
+        return False

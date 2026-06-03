@@ -2,7 +2,6 @@
 
 > Tổng hợp kiến thức về công cụ tự động hóa tải video SocialPeta trong dự án.
 > Cập nhật lần cuối: 2026-06-03
-> Cập nhật lần cuối: 2026-06-03
 
 ---
 
@@ -257,6 +256,30 @@
 - **Fix**: Cập nhật logic sinh `click_sequence` động dựa trên trang hiện tại tương tự V1 để luôn đảm bảo thay đổi số trang thực tế trên giao diện, loại bỏ việc dùng soft trigger trong vòng lặp phân trang.
 - **Files liên quan**: `tools/socialpeta_downloader/core/sniffer.py`
 
+### Lỗi FileNotFoundError do thư mục tạm ở trạng thái Pending Deletion trên Windows
+- **Ngày**: 2026-06-03
+- **Vấn đề**: Biên dịch Nuitka bị crash với thông báo `FileNotFoundError: [Errno 2] No such file or directory` khi ghi các file const/C tạm trong thư mục `build\cli.build`.
+- **Root cause**: Lệnh `rd /s /q build\cli.build` chạy ngay trước Nuitka làm Windows giữ thư mục ở trạng thái "pending deletion" không đồng bộ, khóa đường dẫn đó khiến Nuitka không thể ghi.
+- **Fix**: Đổi tên thư mục cần xóa sang tên tạm ngẫu nhiên trước (ví dụ: `ren build\cli.build cli.build.old.%RANDOM%`), rồi mới xóa thư mục tạm đó, giúp giải phóng ngay lập tức đường dẫn ban đầu cho Nuitka.
+- **Files liên quan**: `fast_build_cli_v2.bat`
+
+### Lỗi biên dịch cú pháp của Windows Command Prompt (CMD) do bảng mã tiếng Việt UTF-8
+- **Ngày**: 2026-06-03
+- **Vấn đề**: File batch `.bat` bị lỗi cú pháp lệnh không hợp lệ (ví dụ: `'ROJECT_DIR' is not recognized`) hoặc tự đóng đột ngột.
+- **Root cause**: Trình biên dịch lệnh CMD phân giải sai byte offsets khi đọc các ký tự UTF-8 tiếng Việt có dấu trong comments hoặc câu lệnh `echo`, gây lệch con trỏ lệnh tiếp theo.
+- **Fix**: Loại bỏ toàn bộ ký tự tiếng Việt có dấu trong file batch, chuyển các comments và thông báo sang tiếng Việt không dấu chuẩn ASCII hoặc tiếng Anh.
+- **Files liên quan**: `fast_build_cli_v2.bat`
+
+### Lỗi bỏ sót video YouTube (YouTube Miss) do sai lệch quy trình click và sniffer
+- **Ngày**: 2026-06-03
+- **Vấn đề**: Tỷ lệ bỏ sót video YouTube cực kỳ cao khi cào trang SocialPeta, dù click vào ảnh vẫn không lấy được thông tin chi tiết của video YouTube.
+- **Root cause**: (1) Trình sniffer nạp dữ liệu cũ hoặc không đồng bộ với sự kiện nhấp chuột. (2) Cơ chế click cũ vào vùng ảnh không đáng tin cậy. (3) CDN video được lấy song song và chèn đè lên trạng thái của YouTube ad ID trước khi worker YouTube kịp cào chi tiết.
+- **Fix**:
+  1. Ưu tiên xử lý YouTube: Khi nạp dữ liệu trang mới, sniffer lập tức phân loại các ad có nhãn nền tảng YouTube (`net-icon-youtube`), đánh dấu trạng thái ban đầu là `pending` với loại `youtube_video`, và đẩy ngay vào hàng đợi `youtube_queues` TRƯỚC KHI xử lý bất kỳ video CDN nào khác.
+  2. Click chính xác vào icon: Nhắm mục tiêu click trực tiếp vào icon nền tảng YouTube ở góc dưới card quảng cáo (`.net-icon-youtube`), tăng độ tin cậy mở hộp popup.
+  3. Tránh overwrite CDN: Khi sniffer bắt được request CDN của quảng cáo đang chờ YouTube click, nó không ghi đè trạng thái `pending` của YouTube ad mà lưu tạm file JSON vào thư mục tạm `tab{tab_index}`. Sau khi worker YouTube hoàn tất (hoặc scraper thread kết thúc), hệ thống sẽ quét dọn các file tạm này để tải CDN dự phòng nếu YouTube extraction thất bại.
+- **Files liên quan**: `tools/socialpeta_downloader/core/sniffer.py`, `tools/socialpeta_downloader/core/youtube.py`, `tools/socialpeta_downloader/core/tab_manager.py`
+
 ---
 
 ## How-To
@@ -356,3 +379,8 @@
 - **Ngày**: 2026-06-03
 - **Chi tiết**: Đối với các ứng dụng Python đóng gói standalone có sử dụng các thư viện C-extension như Playwright (`greenlet`), việc phân phối ứng dụng sang máy khách sạch thường bị lỗi DLL load failed do thiếu Microsoft C++ Runtime. Để giải quyết triệt để mà không bắt người dùng cài đặt gói Redistributable hệ thống, ta sao chép các tệp DLL runtime tiêu chuẩn của MSVC trực tiếp vào thư mục phân phối chứa tệp tin thực thi. Trình nạp của Windows sẽ ưu tiên tìm và tải các DLL này từ thư mục hiện hành của tiến trình.
 - **Files liên quan**: `fast_build_cli_v2.bat`
+
+### Prioritization & Safe Overwrite in Multi-Source Media Sniffing
+- **Ngày**: 2026-06-03
+- **Chi tiết**: Mẫu thiết kế để xử lý quảng cáo hỗ trợ nhiều nguồn đa phương tiện khác nhau (ví dụ: liên kết CDN tải trực tiếp và liên kết YouTube chính chủ). Ta thực hiện phân loại và đưa nguồn có độ ưu tiên cao nhất (YouTube) vào xử lý trước bằng hàng đợi. Đồng thời, khi bắt được các nguồn có độ ưu tiên thấp hơn (CDN) trong quá trình cào, ta không ghi đè trực tiếp để tránh mất dữ liệu nguồn chính, mà lưu tạm thông tin CDN vào một thư mục đệm. Khi luồng cào của tab kết thúc, ta thực hiện quét dọn thư mục đệm này và chỉ xếp hàng tải các CDN dự phòng nếu nguồn ưu tiên chính (YouTube) bị trích xuất thất bại.
+- **Files liên quan**: `tools/socialpeta_downloader/core/sniffer.py`, `tools/socialpeta_downloader/core/tab_manager.py`

@@ -6,6 +6,7 @@ Responsibility: Sniffs network packets, parses creative items, and manages tab p
 import os
 import re
 import time
+import json
 import queue
 import threading
 from datetime import datetime
@@ -29,6 +30,12 @@ class SnifferService:
 
     def _process_api_response_for_tab(self, tab_index: int, data: dict):
         if not self.context:
+            return
+            
+        N = self.context.tab_states[tab_index].get("target_pages", 0)
+        current_page = self.context.tab_states[tab_index].get("current_page", 1)
+        if N > 0 and current_page > N:
+            self.context.tab_packet_received_events[tab_index].set()
             return
             
         try:
@@ -70,14 +77,17 @@ class SnifferService:
                 if parsed["media_type"] == "youtube_click_required":
                     self.context.utils_service._save_item_state(parsed)
                     self.context.tab_youtube_queues[tab_index].put(parsed)
-                else:
+                elif parsed["media_type"] in ("image", "youtube_thumbnail"):
                     self.context.utils_service._save_item_state(parsed)
                     new_count += 1
                     self.context.pending_downloads.put((time.time(), parsed["fpath"]))
+                else: # parsed["media_type"] == "video"
+                    # Defer video CDN downloads: save state but do NOT queue yet
+                    self.context.utils_service._save_item_state(parsed)
                     
             if new_count > 0:
                 self.context.tab_states[tab_index]["scraped_count"] += new_count
-                print(f"[+] Tab {tab_index}: Phat hien va xep hang {new_count} media moi.")
+                print(f"[+] Tab {tab_index}: Phat hien va xep hang {new_count} media (anh) moi.")
                 
             self.context.tab_packet_received_events[tab_index].set()
         except Exception as e:
@@ -131,6 +141,7 @@ class SnifferService:
             else:
                 click_sequence = list(range(1, N + 1))
         
+        transition_successful = False
         for page_num in click_sequence:
             if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
                 break
@@ -150,60 +161,124 @@ class SnifferService:
             except Exception:
                 pass
                 
-            print(f"[*] Tab {tab_index}: Dang chuyen den Trang {page_num}...")
+            is_helper_page = (page_num > N)
+            if is_helper_page:
+                print(f"[*] Tab {tab_index}: Dang chuyen den helper page Trang {page_num}...")
+            else:
+                print(f"[*] Tab {tab_index}: Dang chuyen den Trang {page_num}...")
             self.context.tab_states[tab_index]["current_page"] = page_num
             
             self.context.tab_packet_received_events[tab_index].clear()
             self.context.tab_last_packet_empty[tab_index] = False
             
             success = False
-            try:
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(0.8)
-            except Exception:
-                pass
-                
-            for retry in range(1, 4):
-                if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
-                    break
-                    
-                nav_ok = False
-                if page_num <= 5:
-                    nav_ok = self.context.utils_service._click_page_button(page, page_num)
-                else:
-                    nav_ok = self.context.utils_service._jump_to_page(page, page_num)
-                    
-                if not nav_ok:
-                    print(f"[-] Tab {tab_index} Retry {retry}/3: Khong tim thay hoac khong the click Trang {page_num}. Scroll va thu lai...")
-                    try:
-                        page.keyboard.press("Escape")
-                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        time.sleep(1.5)
-                    except Exception:
-                        pass
-                    continue
-                
-                received = self.context.tab_packet_received_events[tab_index].wait(timeout=30.0)
-                if received:
+            
+            # Special case: target is page 1, browser is on page 1, and transition failed/unavailable.
+            if page_num == 1 and active_page_num == 1 and not transition_successful:
+                print(f"[*] Tab {tab_index}: Su dung soft trigger de tai lai Trang 1 vi transition that bai hoac khong kha dung.")
+                if self.soft_trigger(tab_index):
                     success = True
-                    print(f"[+] Tab {tab_index}: Da nhan phan hoi API cho Trang {page_num}.")
-                    break
-                else:
-                    print(f"[-] Tab {tab_index} Retry {retry}/3: Timeout cho doi goi tin Trang {page_num}.")
-                    try:
-                        page.keyboard.press("Escape")
-                    except Exception:
-                        pass
-                            
+            else:
+                try:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    time.sleep(0.8)
+                except Exception:
+                    pass
+                    
+                for retry in range(1, 4):
+                    if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
+                        break
+                        
+                    nav_ok = False
+                    if page_num <= 5:
+                        nav_ok = self.context.utils_service._click_page_button(page, page_num)
+                    else:
+                        nav_ok = self.context.utils_service._jump_to_page(page, page_num)
+                        
+                    if not nav_ok:
+                        if is_helper_page:
+                            print(f"[*] Tab {tab_index}: Helper transition page {page_num} khong ton tai. Bo qua transition.")
+                            break
+                        print(f"[-] Tab {tab_index} Retry {retry}/3: Khong tim thay hoac khong the click Trang {page_num}. Scroll va thu lai...")
+                        try:
+                            page.keyboard.press("Escape")
+                            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                            time.sleep(1.5)
+                        except Exception:
+                            pass
+                        continue
+                    
+                    timeout_val = 10.0 if is_helper_page else 30.0
+                    received = self.context.tab_packet_received_events[tab_index].wait(timeout=timeout_val)
+                    if received:
+                        success = True
+                        if is_helper_page:
+                            transition_successful = True
+                            print(f"[+] Tab {tab_index}: Da chuyen thanh cong den helper page Trang {page_num}.")
+                        else:
+                            print(f"[+] Tab {tab_index}: Da nhan phan hoi API cho Trang {page_num}.")
+                        break
+                    else:
+                        if is_helper_page:
+                            success = True
+                            transition_successful = True
+                            print(f"[!] Tab {tab_index} CANH BAO: Helper page {page_num} packet timeout, nhung van tiep tuc...")
+                            break
+                        print(f"[-] Tab {tab_index} Retry {retry}/3: Timeout cho doi goi tin Trang {page_num}.")
+                        try:
+                            page.keyboard.press("Escape")
+                        except Exception:
+                            pass
+                                
             if not success:
+                if is_helper_page:
+                    print(f"[*] Tab {tab_index}: Chuyen den helper page that bai, tiep tuc sequence.")
+                    continue
                 print(f"[!] Tab {tab_index} CANH BAO: That bai khi chuyen den Trang {page_num} sau 3 lan thu.")
+                continue
+                
+            if is_helper_page:
+                time.sleep(1.5)
                 continue
                 
             if self.context.tab_last_packet_empty.get(tab_index, False):
                 print(f"[*] Tab {tab_index}: Phanh goi tin Trang {page_num} tra ve danh sach rong. Dung pagination som.")
                 break
                 
-            print(f"[*] Tab {tab_index}: Dang scroll de load anh cho tat ca card tren Trang {page_num}...")
+            # 1. Upgrade youtube items using DOM icon immediately on page load
+            self._upgrade_youtube_items_via_dom(tab_index, page)
+            
+            # 2. Extract YouTube items before anything else
+            q = self.context.tab_youtube_queues.get(tab_index)
+            if q and not q.empty():
+                print(f"[*] Tab {tab_index}: Phat hien {q.qsize()} quang cao YouTube can click trich xuat inline...")
+                while not q.empty():
+                    if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
+                        break
+                    self.context.youtube_service._youtube_extract_worker_for_tab(tab_index, page)
+
+            # 3. Queue deferred video CDN items into pending_downloads
+            tab_dir = os.path.join(self.context.temp_queue_dir, f"tab{tab_index}")
+            new_cdn_videos_count = 0
+            if os.path.exists(tab_dir):
+                for fname in os.listdir(tab_dir):
+                    if fname.endswith(".json"):
+                        fpath = os.path.join(tab_dir, fname)
+                        try:
+                            ad_id = fname[:-5]
+                            db_item = self.context.utils_service.db_get_item(ad_id)
+                            if db_item and db_item.get("status") == "pending" and db_item.get("media_type") == "video":
+                                self.context.pending_downloads.put((time.time(), fpath))
+                                new_cdn_videos_count += 1
+                        except Exception as ex:
+                            print(f"[-] Tab {tab_index}: Loi khi day video pending {fname}: {ex}")
+            
+            if new_cdn_videos_count > 0:
+                self.context.tab_states[tab_index]["scraped_count"] += new_cdn_videos_count
+                print(f"[+] Tab {tab_index}: Da day {new_cdn_videos_count} video CDN thuc su vao hang doi tai.")
+
+            # 4. Scroll page to load image/video CDN resources
+            print(f"[*] Tab {tab_index}: Dang scroll de load anh cho cac card con lai tren Trang {page_num}...")
             try:
                 for i in range(1, 13):
                     if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
@@ -218,14 +293,6 @@ class SnifferService:
                     self.context.log("error", f"[-] Tab {tab_index} Scroll error: {e}\n{traceback.format_exc()}")
                 else:
                     print(f"[-] Tab {tab_index} Scroll error: {e}\n{traceback.format_exc()}")
-                
-            q = self.context.tab_youtube_queues.get(tab_index)
-            if q and not q.empty():
-                print(f"[*] Tab {tab_index}: Phat hien {q.qsize()} quang cao YouTube can click trich xuat inline...")
-                while not q.empty():
-                    if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
-                        break
-                    self.context.youtube_service._youtube_extract_worker_for_tab(tab_index, page)
  
             time.sleep(2)
             
@@ -285,3 +352,133 @@ class SnifferService:
                 
         print(f"[!] CANH BAO: Soft Trigger Tab {tab_index} that bai sau 3 lan thu.")
         return False
+
+    def _upgrade_youtube_items_via_dom(self, tab_index: int, page):
+        if not self.context:
+            return
+            
+        print(f"[*] Tab {tab_index}: Dang quet giao dien de phat hien va nang cap cac item YouTube bi sot...")
+        try:
+            # 1. Quet giao dien lay cac card chua icon youtube
+            youtube_cards = page.evaluate("""() => {
+                const getHash = (url) => {
+                    if (!url) return null;
+                    const m = url.match(/([a-fA-F0-9]{32})/);
+                    if (m) return m[1];
+                    const parts = url.split('?')[0].split('/');
+                    const file = parts[parts.length - 1];
+                    const dotIdx = file.lastIndexOf('.');
+                    return dotIdx !== -1 ? file.substring(0, dotIdx) : file;
+                };
+                
+                const cards = Array.from(document.querySelectorAll('.creative-card-item, .shadow-common-light, [class*="creative-card"]'));
+                const results = [];
+                for (const c of cards) {
+                    const hasYoutubeIcon = !!c.querySelector('.net-icon-youtube') || 
+                                           !!c.querySelector('[class*="net-icon-youtube"]') ||
+                                           !!c.querySelector('[class*="-youtube"]');
+                    if (hasYoutubeIcon) {
+                        const hashes = [];
+                        c.querySelectorAll('img').forEach(img => {
+                            const h = getHash(img.src);
+                            if (h) hashes.push(h);
+                        });
+                        c.querySelectorAll('video').forEach(vid => {
+                            const h = getHash(vid.src);
+                            if (h) hashes.push(h);
+                        });
+                        results.push({
+                            hashes: hashes,
+                            cardText: (c.innerText || c.textContent || "").toLowerCase()
+                        });
+                    }
+                }
+                return results;
+            }""")
+            
+            if not youtube_cards:
+                print(f"[*] Tab {tab_index}: Khong tim thay card YouTube nao tren giao dien hien tai.")
+                return
+                
+            print(f"[*] Tab {tab_index}: Tim thay {len(youtube_cards)} card co icon YouTube tren giao dien.")
+            
+            # 2. Truy van danh sach cac item dang la 'pending' va media_type = 'video' trong DB
+            import sqlite3
+            db_path = self.context.utils_service.get_db_path()
+            conn = sqlite3.connect(db_path, timeout=10.0)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout=5000;")
+            
+            pending_videos = []
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT ad_id, fpath, item_json FROM ad_metadata WHERE status = 'pending'")
+                for ad_id, fpath, item_json in cursor.fetchall():
+                    try:
+                        item = json.loads(item_json)
+                        if item.get("media_type") == "video":
+                            pending_videos.append(item)
+                    except Exception:
+                        pass
+            except Exception as ex:
+                print(f"[-] Tab {tab_index}: Loi doc ad_metadata: {ex}")
+            finally:
+                conn.close()
+                
+            if not pending_videos:
+                return
+                
+            upgraded_count = 0
+            
+            # Helper to extract hash
+            def get_url_hash(url):
+                if not url:
+                    return None
+                m = re.search(r'([a-fA-F0-9]{32})', url)
+                if m:
+                    return m.group(1)
+                parts = url.split('?')[0].split('/')
+                file = parts[-1]
+                dot_idx = file.rfind('.')
+                return file[:dot_idx] if dot_idx != -1 else file
+                
+            for item in pending_videos:
+                ad_id = item["ad_id"]
+                img_url = item.get("image_url", "")
+                vid_url = item.get("video_url", "")
+                app_name = item.get("app_name", "").lower()
+                title = item.get("title", "").lower()
+                body = item.get("body", "").lower()
+                
+                img_hash = get_url_hash(img_url)
+                vid_hash = get_url_hash(vid_url)
+                
+                matched = False
+                for card in youtube_cards:
+                    # Match by hash
+                    if (img_hash and img_hash in card["hashes"]) or (vid_hash and vid_hash in card["hashes"]):
+                        matched = True
+                        break
+                    # Match by text content
+                    app_match = app_name and app_name != 'unknownapp' and app_name in card["cardText"]
+                    title_match = title and title in card["cardText"]
+                    body_match = body and body in card["cardText"]
+                    if app_match and (title_match or body_match):
+                        matched = True
+                        break
+                        
+                if matched:
+                    # Upgrade item to youtube_click_required
+                    item["media_type"] = "youtube_click_required"
+                    self.context.utils_service._save_item_state(item)
+                    
+                    # Them vao tab_youtube_queue
+                    self.context.tab_youtube_queues[tab_index].put(item)
+                    upgraded_count += 1
+                    print(f"[YouTube Upgrade] Da nang cap ad_id={ad_id} tu video sang youtube_click_required vi phat hien icon YouTube.")
+                    
+            if upgraded_count > 0:
+                print(f"[+] Tab {tab_index}: Da nang cap thanh cong {upgraded_count} item len YouTube queue.")
+        except Exception as e:
+            import traceback
+            self.context.log("error", f"[-] Tab {tab_index} Upgrade YouTube error: {e}\n{traceback.format_exc()}")

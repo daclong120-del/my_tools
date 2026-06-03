@@ -6,7 +6,7 @@ Tài liệu này đặc tả kế hoạch xây dựng giao diện dòng lệnh m
 
 > [!IMPORTANT]
 > **Các điểm lưu ý quan trọng trong CLI V2:**
-> 1. **Cấu hình In-memory**: Mọi thiết lập (Thư mục tải mặc định `D:\Downloads\SocialPeta_Workspace`, Cổng debug Chrome `9222`, và Số luồng video song song `3`) sẽ chỉ được lưu trữ tạm thời trong RAM khi chương trình chạy, không ghi đè hay cập nhật vào file `config.json` vật lý.
+> 1. **Cấu hình In-memory**: Mọi thiết lập (Thư mục tải mặc định được tự động nhận diện dựa trên thư mục `Downloads` của người dùng như `C:\Users\<Tên_User>\Downloads\SocialPeta_Downloader`, Cổng debug Chrome `9222`, và Số luồng video song song `3`) sẽ chỉ được lưu trữ tạm thời trong RAM khi chương trình chạy, không ghi đè hay cập nhật vào file `config.json` vật lý.
 > 2. **Phím nóng dừng an toàn (Ctrl + Q)**: Cho phép kết thúc an toàn tiến trình cào và dọn dẹp thư mục tạm `.tmp` bất cứ lúc nào trong khi Dashboard cào đang chạy.
 > 3. **Loại bỏ API Server**: CLI V2 là một TUI hoàn toàn độc lập, loại bỏ hoàn toàn việc khởi chạy FastAPI server (`api.py`).
 

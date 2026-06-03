@@ -120,13 +120,13 @@ Ngay khi người dùng chọn xong loại tài nguyên:
 ```
 ? Hãy cấu hình các cài đặt hệ thống:
 ❯ 1. Số luồng tải video cùng một lúc (Hiện tại: 3 luồng)
-  2. Thay đổi đường dẫn thư mục tải (Hiện tại: D:\Downloads\SocialPeta_Workspace)
+  2. Thay đổi đường dẫn thư mục tải (Hiện tại: [Thư mục Downloads của User]\SocialPeta_Downloader)
   3. Cấu hình Cổng Debug của Chrome (Hiện tại: 9222)
   4. Quay lại
 ```
 
 * **Lưu ý về Lưu trữ cấu hình**: Toàn bộ cấu hình ở giao diện này chỉ tồn tại trong bộ nhớ (In-memory) trong suốt thời gian ứng dụng chạy và **KHÔNG lưu lại vào bất kỳ tệp tin vật lý nào**. Mỗi lần khởi động lại ứng dụng, hệ thống sẽ tự động đặt về các giá trị mặc định sau:
-  - Thư mục tải mặc định: `D:\Downloads\SocialPeta_Workspace`
+  - Thư mục tải mặc định: Tự động nhận diện thư mục `Downloads` của người dùng trên hệ thống (ví dụ: `C:\Users\<Tên_User>\Downloads\SocialPeta_Downloader` trên Windows).
   - Cổng Debug mặc định: `9222`
   - Số luồng tải mặc định: `3`
 
@@ -140,7 +140,7 @@ Ngay khi người dùng chọn xong loại tài nguyên:
 
 ```
 [+] Đang mở cửa sổ chọn thư mục lưu trữ...
-[+] Thư mục đã chọn: D:\Downloads\SocialPeta_Workspace
+[+] Thư mục đã chọn: C:\Users\<Tên_User>\Downloads\SocialPeta_Downloader
 
 ? Bạn muốn tải bao nhiêu trang từ SocialPeta? (Nhập số): 5
 ```

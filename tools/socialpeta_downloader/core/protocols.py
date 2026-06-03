@@ -20,6 +20,8 @@ class IEngineContext(Protocol):
     playwright_connected: bool
     last_packet_empty: bool
     total_pages: Optional[int]
+    current_page: int
+    pagination_target_pages: int
     active_page: Any
     
     # Stats

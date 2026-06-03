@@ -56,7 +56,7 @@ class YoutubeService:
                     if page.is_closed():
                         break
                         
-                    clicked = page.evaluate("""({adId, imageUrl, videoUrl}) => {
+                    clicked = page.evaluate(r"""({adId, imageUrl, videoUrl, appName, title, body}) => {
                         const getHash = (url) => {
                             if (!url) return null;
                             const m = url.match(/([a-fA-F0-9]{32})/);
@@ -70,60 +70,133 @@ class YoutubeService:
                         const imgHash = getHash(imageUrl);
                         const vidHash = getHash(videoUrl);
                         
-                        const cards = Array.from(document.querySelectorAll('.creative-card-item, .shadow-common-light'));
-                        let card = null;
+                        const cards = Array.from(document.querySelectorAll('.creative-card-item, .shadow-common-light, [class*="creative-card"]'));
+                        let bestCard = null;
+                        let maxScore = 0;
                         
                         for (const c of cards) {
+                            let score = 0;
+                            const cardText = (c.innerText || c.textContent || "").toLowerCase();
+                            
+                            // 1. So khop bang anh/video hash (20 diem)
                             const imgs = Array.from(c.querySelectorAll('img'));
-                            let matched = false;
+                            let hashMatched = false;
                             for (const img of imgs) {
                                 if (img && img.src) {
                                     if (imgHash && img.src.includes(imgHash)) {
-                                        matched = true;
+                                        hashMatched = true;
                                         break;
                                     }
                                     if (vidHash && img.src.includes(vidHash)) {
-                                        matched = true;
+                                        hashMatched = true;
                                         break;
                                     }
                                 }
-                            }
-                            if (matched) {
-                                card = c;
-                                break;
                             }
                             
                             const videos = Array.from(c.querySelectorAll('video'));
                             for (const video of videos) {
                                 if (video && video.src) {
                                     if (vidHash && video.src.includes(vidHash)) {
-                                        matched = true;
+                                        hashMatched = true;
                                         break;
                                     }
                                     if (imgHash && video.src.includes(imgHash)) {
-                                        matched = true;
+                                        hashMatched = true;
                                         break;
                                     }
                                 }
                             }
-                            if (matched) {
-                                card = c;
-                                break;
+                            
+                            if (hashMatched) {
+                                score += 20;
+                            }
+                            
+                            // 2. So khop bang App Name (5 diem)
+                            if (appName) {
+                                const cleanAppName = appName.toLowerCase().trim();
+                                if (cleanAppName && cleanAppName !== 'unknownapp') {
+                                    if (cardText.includes(cleanAppName)) {
+                                        score += 5;
+                                    } else {
+                                        const words = cleanAppName.split(/\s+/).filter(w => w.length > 2);
+                                        let wordMatchCount = 0;
+                                        for (const w of words) {
+                                            if (cardText.includes(w)) {
+                                                wordMatchCount++;
+                                            }
+                                        }
+                                        if (words.length > 0 && wordMatchCount === words.length) {
+                                            score += 4;
+                                        } else if (wordMatchCount > 0) {
+                                            score += 1.5 * wordMatchCount;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 3. So khop bang Title hoac Body (10 diem)
+                            if (title) {
+                                const cleanTitle = title.toLowerCase().trim();
+                                if (cleanTitle) {
+                                    if (cardText.includes(cleanTitle)) {
+                                        score += 10;
+                                    } else if (cleanTitle.length > 15) {
+                                        const sub = cleanTitle.substring(0, 15);
+                                        if (cardText.includes(sub)) {
+                                            score += 5;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (body) {
+                                const cleanBody = body.toLowerCase().trim();
+                                if (cleanBody) {
+                                    if (cardText.includes(cleanBody)) {
+                                        score += 10;
+                                    } else if (cleanBody.length > 15) {
+                                        const sub = cleanBody.substring(0, 15);
+                                        if (cardText.includes(sub)) {
+                                            score += 5;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 4. Kiem tra icon YouTube tren card (3 diem)
+                            const hasYoutubeIcon = !!c.querySelector('.net-icon-youtube') || 
+                                                   !!c.querySelector('[class*="net-icon-youtube"]') ||
+                                                   !!c.querySelector('[class*="-youtube"]');
+                            if (hasYoutubeIcon) {
+                                score += 3;
+                            }
+                            
+                            if (score > maxScore) {
+                                maxScore = score;
+                                bestCard = c;
                             }
                         }
                         
-                        if (card) {
-                            card.scrollIntoView({behavior: 'instant', block: 'center'});
-                            const btn = Array.from(card.querySelectorAll('button, a, [class*="btn"], [class*="detail"]'))
+                        if (bestCard && maxScore >= 5) {
+                            bestCard.scrollIntoView({behavior: 'instant', block: 'center'});
+                            const btn = Array.from(bestCard.querySelectorAll('button, a, [class*="btn"], [class*="detail"]'))
                                 .find(el => {
                                     const text = el.textContent || el.innerText || "";
-                                    return text.includes("详情") || text.toLowerCase().includes("detail");
-                                }) || card.querySelector('button, [class*="btn"], [class*="detail"], a') || card;
+                                    return text.includes("详情") || text.toLowerCase().includes("detail") || text.includes("Chi tiết");
+                                }) || bestCard.querySelector('button, [class*="btn"], [class*="detail"], a') || bestCard;
                             btn.click();
                             return true;
                         }
                         return false;
-                    }""", {"adId": ad_id, "imageUrl": item.get("image_url", ""), "videoUrl": item.get("video_url", "")})
+                    }""", {
+                        "adId": ad_id,
+                        "imageUrl": item.get("image_url", ""),
+                        "videoUrl": item.get("video_url", ""),
+                        "appName": item.get("app_name", ""),
+                        "title": item.get("title", ""),
+                        "body": item.get("body", "")
+                    })
                     
                     if clicked:
                         break
@@ -260,7 +333,7 @@ class YoutubeService:
                     if page.is_closed():
                         break
                         
-                    clicked = page.evaluate("""({adId, imageUrl, videoUrl}) => {
+                    clicked = page.evaluate(r"""({adId, imageUrl, videoUrl, appName, title, body}) => {
                         const getHash = (url) => {
                             if (!url) return null;
                             const m = url.match(/([a-fA-F0-9]{32})/);
@@ -274,55 +347,133 @@ class YoutubeService:
                         const imgHash = getHash(imageUrl);
                         const vidHash = getHash(videoUrl);
                         
-                        const cards = Array.from(document.querySelectorAll('.creative-card-item, .shadow-common-light'));
-                        let card = null;
+                        const cards = Array.from(document.querySelectorAll('.creative-card-item, .shadow-common-light, [class*="creative-card"]'));
+                        let bestCard = null;
+                        let maxScore = 0;
                         
                         for (const c of cards) {
+                            let score = 0;
+                            const cardText = (c.innerText || c.textContent || "").toLowerCase();
+                            
+                            // 1. So khop bang anh/video hash (20 diem)
                             const imgs = Array.from(c.querySelectorAll('img'));
-                            let matched = false;
+                            let hashMatched = false;
                             for (const img of imgs) {
                                 if (img && img.src) {
                                     if (imgHash && img.src.includes(imgHash)) {
-                                        matched = true;
+                                        hashMatched = true;
                                         break;
                                     }
                                     if (vidHash && img.src.includes(vidHash)) {
-                                        matched = true;
+                                        hashMatched = true;
                                         break;
                                     }
                                 }
-                            }
-                            if (matched) {
-                                card = c;
-                                break;
                             }
                             
                             const videos = Array.from(c.querySelectorAll('video'));
                             for (const video of videos) {
                                 if (video && video.src) {
                                     if (vidHash && video.src.includes(vidHash)) {
-                                        matched = true;
+                                        hashMatched = true;
                                         break;
                                     }
                                     if (imgHash && video.src.includes(imgHash)) {
-                                        matched = true;
+                                        hashMatched = true;
                                         break;
                                     }
                                 }
                             }
-                            if (matched) {
-                                card = c;
-                                break;
+                            
+                            if (hashMatched) {
+                                score += 20;
+                            }
+                            
+                            // 2. So khop bang App Name (5 diem)
+                            if (appName) {
+                                const cleanAppName = appName.toLowerCase().trim();
+                                if (cleanAppName && cleanAppName !== 'unknownapp') {
+                                    if (cardText.includes(cleanAppName)) {
+                                        score += 5;
+                                    } else {
+                                        const words = cleanAppName.split(/\s+/).filter(w => w.length > 2);
+                                        let wordMatchCount = 0;
+                                        for (const w of words) {
+                                            if (cardText.includes(w)) {
+                                                wordMatchCount++;
+                                            }
+                                        }
+                                        if (words.length > 0 && wordMatchCount === words.length) {
+                                            score += 4;
+                                        } else if (wordMatchCount > 0) {
+                                            score += 1.5 * wordMatchCount;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 3. So khop bang Title hoac Body (10 diem)
+                            if (title) {
+                                const cleanTitle = title.toLowerCase().trim();
+                                if (cleanTitle) {
+                                    if (cardText.includes(cleanTitle)) {
+                                        score += 10;
+                                    } else if (cleanTitle.length > 15) {
+                                        const sub = cleanTitle.substring(0, 15);
+                                        if (cardText.includes(sub)) {
+                                            score += 5;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (body) {
+                                const cleanBody = body.toLowerCase().trim();
+                                if (cleanBody) {
+                                    if (cardText.includes(cleanBody)) {
+                                        score += 10;
+                                    } else if (cleanBody.length > 15) {
+                                        const sub = cleanBody.substring(0, 15);
+                                        if (cardText.includes(sub)) {
+                                            score += 5;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 4. Kiem tra icon YouTube tren card (3 diem)
+                            const hasYoutubeIcon = !!c.querySelector('.net-icon-youtube') || 
+                                                   !!c.querySelector('[class*="net-icon-youtube"]') ||
+                                                   !!c.querySelector('[class*="-youtube"]');
+                            if (hasYoutubeIcon) {
+                                score += 3;
+                            }
+                            
+                            if (score > maxScore) {
+                                maxScore = score;
+                                bestCard = c;
                             }
                         }
                         
-                        if (card) {
-                            card.scrollIntoView({behavior: 'instant', block: 'center'});
-                            card.click();
+                        if (bestCard && maxScore >= 5) {
+                            bestCard.scrollIntoView({behavior: 'instant', block: 'center'});
+                            const btn = Array.from(bestCard.querySelectorAll('button, a, [class*="btn"], [class*="detail"]'))
+                                .find(el => {
+                                    const text = el.textContent || el.innerText || "";
+                                    return text.includes("详情") || text.toLowerCase().includes("detail") || text.includes("Chi tiết");
+                                }) || bestCard.querySelector('button, [class*="btn"], [class*="detail"], a') || bestCard;
+                            btn.click();
                             return true;
                         }
                         return false;
-                    }""", {"adId": ad_id, "imageUrl": item.get("image_url", ""), "videoUrl": item.get("video_url", "")})
+                    }""", {
+                        "adId": ad_id,
+                        "imageUrl": item.get("image_url", ""),
+                        "videoUrl": item.get("video_url", ""),
+                        "appName": item.get("app_name", ""),
+                        "title": item.get("title", ""),
+                        "body": item.get("body", "")
+                    })
                     
                     if clicked:
                         break

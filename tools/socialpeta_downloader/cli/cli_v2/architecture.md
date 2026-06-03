@@ -12,7 +12,7 @@ CLI V2 hoạt động theo cơ chế **In-memory Configuration** (Cấu hình tr
 
 1. **Khởi chạy và kết nối Chrome Debug Port**:
    - Khi CLI được khởi chạy, nó nạp cấu hình mặc định:
-     - Thư mục tải xuống: `D:\Downloads\SocialPeta_Workspace`
+     - Thư mục tải xuống: Tự động định vị thư mục `Downloads` chuẩn của người dùng trên Windows (ví dụ: `C:\Users\<Tên_User>\Downloads\SocialPeta_Downloader`) để tránh lỗi thiếu ổ đĩa (như ổ `D:\`).
      - Cổng gỡ lỗi Chrome (Chrome Debug Port): `9222`
      - Số luồng tải video song song: `3`
    - Gọi lớp `ChromeService` để kiểm tra xem cổng `9222` đã mở chưa.
@@ -78,17 +78,26 @@ CLI V2 hoạt động theo cơ chế **In-memory Configuration** (Cấu hình tr
 1. **Phân loại trạng thái ban đầu (`youtube_click_required`)**:
    - Khi gói tin API từ SocialPeta được sniff, lớp `UtilsService` phân tích metadata của ad.
    - Nếu phát hiện quảng cáo này chạy trên nền tảng YouTube (`platform == "youtube"` hoặc chứa từ khóa youtube trong trường publisher/youtube_url) nhưng **chưa có link YouTube trực tiếp** trong phản hồi API (thường là link CDN trống hoặc video 0s), ad này được gán `media_type = "youtube_click_required"`.
-2. **Hàng đợi xử lý YouTube của từng Tab (`tab_youtube_queues`)**:
-   - Thay vì bỏ qua, Sniffer đẩy ad này vào hàng đợi của tab tương ứng `self.context.tab_youtube_queues[tab_index]`.
-   - Ngay sau khi Sniffer hoàn thành việc cuộn và tải hết ảnh trên trang hiện tại, nó sẽ kiểm tra hàng đợi này. Nếu phát hiện có ad cần click YouTube, nó sẽ kích hoạt luồng trích xuất.
-3. **Mô phỏng click chi tiết và truy vết (UC-03 click flow)**:
-   - `YoutubeService` sử dụng JavaScript evaluate chạy trực tiếp trong trang tab để tìm đúng card quảng cáo tương ứng (bằng cách so sánh mã hash của ảnh cover/ảnh thumbnail của ad).
-   - Khi tìm thấy card, nó tự động cuộn card đó vào giữa màn hình (`scrollIntoView`) và click mở modal chi tiết của ad đó.
+2. **Nâng cấp tự động qua DOM Scanner (`_upgrade_youtube_items_via_dom`)**:
+   - Để tránh việc bỏ sót các quảng cáo bị gán nhầm là `video` CDN trong gói tin API nhưng thực tế có icon YouTube dưới góc card, trước khi xử lý hàng đợi click YouTube cho mỗi tab, hệ thống tự động quét DOM hiện tại.
+   - Tìm kiếm các thẻ card chứa icon YouTube (`.net-icon-youtube` hoặc tương đương). Nếu phát hiện card có icon YouTube nhưng metadata tương ứng đang ở trạng thái `pending` của loại `video`, hệ thống tự động nâng cấp ad đó lên loại `youtube_click_required` và đẩy vào hàng đợi của tab để click trích xuất.
+3. **Hàng đợi xử lý YouTube của từng Tab (`tab_youtube_queues`)**:
+   - Sniffer đẩy các ad cần click YouTube vào hàng đợi của tab tương ứng `self.context.tab_youtube_queues[tab_index]`.
+   - Ngay sau khi Sniffer hoàn thành việc cuộn và quét giao diện trên trang hiện tại, nó sẽ kiểm tra hàng đợi này. Nếu phát hiện có ad cần click YouTube, nó sẽ kích hoạt luồng trích xuất.
+4. **Mô phỏng click chi tiết bằng Scoring Matcher**:
+   - `YoutubeService` sử dụng thuật toán tính điểm tích lũy **Scoring Matcher** để tìm đúng card quảng cáo cần click, thay vì chỉ so khớp mã hash cover/thumbnail thuần túy dễ bị trượt.
+   - Điểm số của mỗi card được tính như sau:
+     - *So khớp Hash (20 điểm)*: Trùng hash ảnh/video CDN.
+     - *So khớp App Name (5 điểm)*: Trùng khớp tên App (toàn bộ hoặc trùng khớp lũy tiến các từ khóa riêng lẻ).
+     - *So khớp Content (10 điểm)*: Trùng Title/Body (toàn bộ hoặc chuỗi con tối thiểu 15 ký tự).
+     - *Chỉ báo YouTube Icon (3 điểm)*: Thẻ card chứa class `.net-icon-youtube` hoặc tương đương.
+   - Card đạt điểm cao nhất và tối thiểu là 5 điểm sẽ được cuộn tới (`scrollIntoView`) và kích hoạt click vào nút Chi tiết hoặc click trực tiếp lên card để mở modal chi tiết của ad đó.
+5. **Mở modal chi tiết và truy vết (UC-03 click flow)**:
    - Khi modal chi tiết mở ra, hệ thống liên tục poll (quét định kỳ mỗi 500ms, tối đa 3-6 giây) để tìm:
      - Thẻ neo `a` trỏ đến `youtube.com` hoặc `youtu.be` trong modal.
      - Thẻ `iframe` nhúng trình phát video YouTube để lấy thuộc tính `src`.
      - Regex tìm link YouTube thô trong text modal.
-4. **Chuẩn hóa và Tải về**:
+6. **Chuẩn hóa và Tải về**:
    - Khi lấy được link YouTube, link sẽ được chuẩn hóa về dạng chuẩn `https://www.youtube.com/watch?v=VIDEO_ID`.
    - Trạng thái ad được cập nhật thành `youtube_video`, và ad được đẩy sang hàng đợi `pending_downloads` để luồng Downloader gọi `yt-dlp` tải xuống video chất lượng cao.
    - Sau khi hoàn thành hoặc thất bại, hệ thống gửi phím nóng `Escape` để đóng modal chi tiết và tiếp tục xử lý ad tiếp theo trong hàng đợi.
