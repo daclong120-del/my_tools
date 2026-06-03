@@ -37,27 +37,66 @@ class Settings:
 
     @property
     def FFMPEG_PATH(self) -> str:
-        if getattr(sys, 'frozen', False):
+        is_frozen = getattr(sys, 'frozen', False) or '__compiled__' in globals() or '__compiled__' in sys.builtin_module_names
+        
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+        temp_dir_candidates = [
+            current_file_dir,
+            os.path.dirname(current_file_dir),
+            os.path.dirname(os.path.dirname(current_file_dir)),
+        ]
+        if hasattr(sys, '_MEIPASS'):
+            temp_dir_candidates.append(sys._MEIPASS)
+            
+        for temp_dir in temp_dir_candidates:
+            local_path = os.path.join(temp_dir, "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+            if os.path.exists(local_path):
+                return local_path
+            resources_bin_path = os.path.join(temp_dir, "resources", "bin", "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+            if os.path.exists(resources_bin_path):
+                return resources_bin_path
+
+        if is_frozen:
             exe_dir = os.path.dirname(sys.executable)
             local_path = os.path.join(exe_dir, "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
             if os.path.exists(local_path):
                 return local_path
+                
         return "ffmpeg"
 
     @property
     def FFPROBE_PATH(self) -> str:
-        if getattr(sys, 'frozen', False):
+        is_frozen = getattr(sys, 'frozen', False) or '__compiled__' in globals() or '__compiled__' in sys.builtin_module_names
+        
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+        temp_dir_candidates = [
+            current_file_dir,
+            os.path.dirname(current_file_dir),
+            os.path.dirname(os.path.dirname(current_file_dir)),
+        ]
+        if hasattr(sys, '_MEIPASS'):
+            temp_dir_candidates.append(sys._MEIPASS)
+            
+        for temp_dir in temp_dir_candidates:
+            local_path = os.path.join(temp_dir, "ffprobe.exe" if sys.platform == "win32" else "ffprobe")
+            if os.path.exists(local_path):
+                return local_path
+            resources_bin_path = os.path.join(temp_dir, "resources", "bin", "ffprobe.exe" if sys.platform == "win32" else "ffprobe")
+            if os.path.exists(resources_bin_path):
+                return resources_bin_path
+
+        if is_frozen:
             exe_dir = os.path.dirname(sys.executable)
             local_path = os.path.join(exe_dir, "ffprobe.exe" if sys.platform == "win32" else "ffprobe")
             if os.path.exists(local_path):
                 return local_path
+                
         return "ffprobe"
 
 settings = Settings()
 
 # Đảm bảo các thư mục tồn tại
 os.makedirs(settings.DATA_DIR, exist_ok=True)
-os.makedirs(settings.DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(settings.SESSION_DIR, exist_ok=True)
 print(f"[*] DATA_DIR: {settings.DATA_DIR}")
 

@@ -44,6 +44,26 @@ CLI V2 hoạt động theo cơ chế **In-memory Configuration** (Cấu hình tr
      - **Stream 3 (Deduplication - Luồng Lọc trùng)**: Lắng nghe hàng đợi `filter_queue` của các video đã tải về dạng tạm thời. Sử dụng `ffmpeg` & `ffprobe` băm MD5 và so sánh vân tay video (phát hiện trùng lặp nâng cao). Nếu không trùng, đổi tên sang file unique lưu vào thư mục đích.
    - CLI hiển thị **Live Dashboard** cập nhật liên tục tiến độ: Số lượng đã sniff, đang tải, thành công, thất bại, trùng lặp và tiến trình tải của các luồng.
 
+   > [!IMPORTANT]
+   > **Điểm lưu ý quan trọng về cơ chế Phân trang & Sniffing Trang 1 (Thiết kế đồng bộ V1 & V2):**
+   > - **Thiết kế chuẩn (Giống CLI V1)**: Khi người dùng yêu cầu tải Trang 1:
+   >   - Nếu trình duyệt đang đứng sẵn ở Trang 1, hệ thống phải tự động click sang Trang 2 rồi quay ngược lại Trang 1 (`click_sequence = [2, 1]`) để kích hoạt trình duyệt tải lại dữ liệu từ API, giúp Sniffer bắt được gói tin chứa metadata quảng cáo.
+   >   - Nếu trình duyệt đang ở Trang 2, hệ thống sẽ click chuyển về Trang 1 (`click_sequence = [1]`).
+   > - **Điểm sai lệch trong code `sniffer.py` hiện tại**: Code hiện tại của V2 đang sử dụng hàm `soft_trigger` (cuộn trang và click Search) khi `active_page_num == 1` thay vì thực hiện cơ chế chuyển trang `[2, 1]` như thiết kế của V1. Điều này làm giảm tỷ lệ bắt gói tin thành công và cần được sửa lại về đúng cơ chế chuyển trang của V1.
+   >
+   > **Lưu ý thảo luận về trường hợp cào 2 trang (N = 2) và tính cồng kềnh:**
+   > - *Ý kiến tối giản*: Sao không click sang Trang 2 lấy thông tin rồi quay về Trang 1 lấy thông tin cho mọi trường hợp?
+   > - *Thực tế kỹ thuật*: Nếu trình duyệt đang ở Trang 2 sẵn, click thẳng vào nút Trang 2 sẽ không kích hoạt tải lại API (do SPA của SocialPeta không load lại nếu trang hiện tại trùng với nút bấm). Vì vậy:
+   >   - Nếu đang ở Trang 1: Sequence là `[2, 1]` (Click 2 để lấy Trang 2, rồi về 1 để lấy Trang 1).
+   >   - Nếu đang ở Trang 2: Sequence bắt buộc phải là `[1, 2]` (Phải click về Trang 1 để lấy Trang 1 trước, sau đó click ngược lại Trang 2 để lấy Trang 2).
+   >   Việc sinh `click_sequence` động dựa trên trang hiện tại là bắt buộc để tránh trình duyệt không phản hồi khi click vào trang đang đứng.
+   >
+   > **Trường hợp cào nhiều trang (N > 2):**
+   > Để tối ưu hóa và đảm bảo thu thập đầy đủ gói tin cho tất cả các trang được yêu cầu từ 1 đến N:
+   > - **Nếu trình duyệt đang ở Trang 1**: Hành trình sẽ là `list(range(2, N + 1)) + [1]` (Ví dụ N=5: `[2, 3, 4, 5, 1]`). Hệ thống cào các trang từ 2 đến N trước, sau đó quay lại Trang 1 để cào Trang 1 cuối cùng.
+   > - **Nếu trình duyệt đang ở Trang khác 1** (Ví dụ ở Trang 3): Hành trình sẽ là `list(range(1, N + 1))` (Ví dụ N=5: `[1, 2, 3, 4, 5]`). Hệ thống click về Trang 1 trước (để lấy Trang 1), sau đó lần lượt click tăng dần từ 2 đến N để lấy các trang còn lại.
+   > Cơ chế này đảm bảo mọi bước chuyển trang đều là một cú click thay đổi trang thực sự, kích hoạt API gửi gói tin mới mà không bị trùng lặp trang hiện tại.
+
 6. **Phím tắt thoát an toàn (Safe Exit Key)**:
    - Khi Dashboard đang chạy, người dùng có thể nhấn tổ hợp phím **`Ctrl + Q`** bất kỳ lúc nào để kích hoạt dừng khẩn cấp. Chương trình sẽ dừng mọi luồng cào/tải, dọn dẹp thư mục tạm `.tmp` và đưa người dùng trở lại Menu chính.
 

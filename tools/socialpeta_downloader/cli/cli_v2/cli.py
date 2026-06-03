@@ -260,7 +260,7 @@ def configure_settings(core):
             new_dir = ask_directory_dialog(AppState.download_dir)
             if new_dir:
                 AppState.download_dir = os.path.abspath(new_dir)
-                core.update_download_dir(AppState.download_dir)
+                core.save_config(AppState.download_dir)
                 print(f"{GREEN}[+] Cập nhật thư mục tải thành: {AppState.download_dir}{RESET}")
             time.sleep(1.5)
 
@@ -381,6 +381,14 @@ def main_menu():
             # 7. Start system and run scraper thread
             core.download_mode = selected_mode
             print(f"\n[*] Đang khởi động hệ thống cào tải với số luồng = {AppState.thread_count}...")
+            
+            # Reset the state of the selected tab to avoid race conditions/stale status
+            if selected_tab in core.tab_states:
+                core.tab_states[selected_tab]["status"] = "new"
+                core.tab_states[selected_tab]["current_page"] = 1
+                core.tab_states[selected_tab]["scraped_count"] = 0
+                core.tab_states[selected_tab]["target_pages"] = num_pages
+
             core.start_system(thread_count=AppState.thread_count)
 
             scraper_thread = threading.Thread(
@@ -456,6 +464,10 @@ def main_menu():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--check-deps":
+        print(f"FFMPEG_PATH: {settings.FFMPEG_PATH}")
+        print(f"FFPROBE_PATH: {settings.FFPROBE_PATH}")
+        sys.exit(0)
     try:
         main_menu()
     except KeyboardInterrupt:

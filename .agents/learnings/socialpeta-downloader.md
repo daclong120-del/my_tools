@@ -2,6 +2,7 @@
 
 > Tổng hợp kiến thức về công cụ tự động hóa tải video SocialPeta trong dự án.
 > Cập nhật lần cuối: 2026-06-03
+> Cập nhật lần cuối: 2026-06-03
 
 ---
 
@@ -241,6 +242,20 @@
 - **Root cause**: Trình biên dịch Nuitka không tự động đóng gói các thư viện liên kết động C++ tiêu chuẩn như `msvcp140.dll` và các file liên quan (trong khi file `_greenlet.pyd` của Playwright biên dịch bằng C++ và yêu cầu chúng).
 - **Fix**: Sao chép các file DLL C++ Runtime tiêu chuẩn (`msvcp140.dll`, `msvcp140_1.dll`, `msvcp140_2.dll`, `msvcp140_atomic_wait.dll`, `msvcp140_codecvt_ids.dll`, và `vcruntime140_threads.dll`) từ thư mục `C:\Windows\System32` của máy biên dịch trực tiếp vào thư mục gốc chứa file thực thi `.exe` của bản phân phối độc lập (dist).
 - **Files liên quan**: `fast_build_cli_v2.bat`
+
+### Lỗi sập Live Dashboard sớm do Stale State trong tab_states
+- **Ngày**: 2026-06-03
+- **Vấn đề**: Khi khởi chạy cào từ CLI V2, Live Dashboard kết thúc ngay lập tức trước khi luồng crawler bắt đầu chạy.
+- **Root cause**: Trạng thái `status` của tab trong `tab_states` từ phiên chạy trước vẫn giữ giá trị `"done"`. Vòng lặp dashboard trong `cli.py` đọc giá trị này và thoát lập tức vì không thấy scraper hoạt động.
+- **Fix**: Reset động trạng thái tab (`status = "new"`, `scraped_count = 0`, etc.) trong `cli.py` ngay trước khi khởi chạy luồng scraper và Live Dashboard.
+- **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/cli.py`
+
+### Lỗi bỏ sót Trang 1 khi cào trong CLI V2
+- **Ngày**: 2026-06-03
+- **Vấn đề**: Khi yêu cầu cào Trang 1, hệ thống không tự chuyển sang Trang 2 rồi quay về Trang 1 để kích hoạt API tải lại dữ liệu mà dùng soft trigger không hiệu quả.
+- **Root cause**: Khác biệt logic phân trang giữa CLI V1 và V2. V2 sử dụng `soft_trigger` (cuộn và tìm kiếm) thay vì thực hiện chuỗi click chuyển đổi trang thực sự (`click_sequence = [2, 1]`) như V1.
+- **Fix**: Cập nhật logic sinh `click_sequence` động dựa trên trang hiện tại tương tự V1 để luôn đảm bảo thay đổi số trang thực tế trên giao diện, loại bỏ việc dùng soft trigger trong vòng lặp phân trang.
+- **Files liên quan**: `tools/socialpeta_downloader/core/sniffer.py`
 
 ---
 

@@ -120,7 +120,16 @@ class SnifferService:
             
         print(f"[*] Tab {tab_index} - Trang hien tai: {active_page_num}")
         
-        click_sequence = list(range(1, N + 1))
+        if N == 1:
+            if active_page_num == 1:
+                click_sequence = [2, 1]
+            else:
+                click_sequence = [1]
+        else:
+            if active_page_num == 1:
+                click_sequence = list(range(2, N + 1)) + [1]
+            else:
+                click_sequence = list(range(1, N + 1))
         
         for page_num in click_sequence:
             if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
@@ -148,47 +157,43 @@ class SnifferService:
             self.context.tab_last_packet_empty[tab_index] = False
             
             success = False
-            if page_num == 1 and active_page_num == 1:
-                print(f"[*] Tab {tab_index}: Dang dung soft trigger de sniff goi tin Trang 1...")
-                success = self.soft_trigger(tab_index)
-            else:
-                try:
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    time.sleep(0.8)
-                except Exception:
-                    pass
+            try:
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                time.sleep(0.8)
+            except Exception:
+                pass
+                
+            for retry in range(1, 4):
+                if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
+                    break
                     
-                for retry in range(1, 4):
-                    if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
-                        break
-                        
-                    nav_ok = False
-                    if page_num <= 5:
-                        nav_ok = self.context.utils_service._click_page_button(page, page_num)
-                    else:
-                        nav_ok = self.context.utils_service._jump_to_page(page, page_num)
-                        
-                    if not nav_ok:
-                        print(f"[-] Tab {tab_index} Retry {retry}/3: Khong tim thay hoac khong the click Trang {page_num}. Scroll va thu lai...")
-                        try:
-                            page.keyboard.press("Escape")
-                            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                            time.sleep(1.5)
-                        except Exception:
-                            pass
-                        continue
+                nav_ok = False
+                if page_num <= 5:
+                    nav_ok = self.context.utils_service._click_page_button(page, page_num)
+                else:
+                    nav_ok = self.context.utils_service._jump_to_page(page, page_num)
                     
-                    received = self.context.tab_packet_received_events[tab_index].wait(timeout=30.0)
-                    if received:
-                        success = True
-                        print(f"[+] Tab {tab_index}: Da nhan phan hoi API cho Trang {page_num}.")
-                        break
-                    else:
-                        print(f"[-] Tab {tab_index} Retry {retry}/3: Timeout cho doi goi tin Trang {page_num}.")
-                        try:
-                            page.keyboard.press("Escape")
-                        except Exception:
-                            pass
+                if not nav_ok:
+                    print(f"[-] Tab {tab_index} Retry {retry}/3: Khong tim thay hoac khong the click Trang {page_num}. Scroll va thu lai...")
+                    try:
+                        page.keyboard.press("Escape")
+                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        time.sleep(1.5)
+                    except Exception:
+                        pass
+                    continue
+                
+                received = self.context.tab_packet_received_events[tab_index].wait(timeout=30.0)
+                if received:
+                    success = True
+                    print(f"[+] Tab {tab_index}: Da nhan phan hoi API cho Trang {page_num}.")
+                    break
+                else:
+                    print(f"[-] Tab {tab_index} Retry {retry}/3: Timeout cho doi goi tin Trang {page_num}.")
+                    try:
+                        page.keyboard.press("Escape")
+                    except Exception:
+                        pass
                             
             if not success:
                 print(f"[!] Tab {tab_index} CANH BAO: That bai khi chuyen den Trang {page_num} sau 3 lan thu.")
