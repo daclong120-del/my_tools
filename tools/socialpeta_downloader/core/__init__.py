@@ -143,6 +143,7 @@ class SocialPetaDownloaderCore:
     def __init__(self):
         self.session_dir = settings.SESSION_DIR
         self.download_mode = "all"
+        self.quiet_mode = False
         
         # Load config to resolve self.download_dir and other paths
         self.load_config()
@@ -197,6 +198,7 @@ class SocialPetaDownloaderCore:
         self.ad_id_to_status = {}
         self.tab_id_to_index = {}
         self.tab_is_new = {}
+        self.download_progress = {}
         self.active_pages = {}
         self.tab_youtube_queues = {}
         self.active_page = None

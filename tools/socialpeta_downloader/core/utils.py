@@ -106,6 +106,8 @@ class UtilsService:
                         sub_queue.put_nowait(msg)
                     except Exception:
                         pass
+            if getattr(self.context, "quiet_mode", False):
+                return
         print(f"[{level.upper()}] {message}")
 
     def clear_logs(self):
@@ -445,8 +447,7 @@ class UtilsService:
             f".el-pagination li:has-text('{page_num}')",
             f"//li[contains(@class, 'number') and text()='{page_num}']",
             f"button:has-text('{page_num}')",
-            f"li:has-text('{page_num}')",
-            f"text=/^{page_num}$/"
+            f"li:has-text('{page_num}')"
         ]
         for sel in selectors:
             try:
@@ -464,7 +465,6 @@ class UtilsService:
             ".ant-pagination-options input",
             ".ant-pagination input",
             ".el-pagination__jump input",
-            "input[type='number']",
             ".el-pagination input"
         ]
         for sel in selectors:

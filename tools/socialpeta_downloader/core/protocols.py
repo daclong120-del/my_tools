@@ -11,6 +11,7 @@ class IEngineContext(Protocol):
     csv_path: str
     audit_csv_path: str
     download_mode: str
+    quiet_mode: bool
     
     # State control
     running: bool
@@ -58,8 +59,10 @@ class IEngineContext(Protocol):
     ad_id_to_status: Dict[str, str]
     tab_id_to_index: Dict[str, int]
     tab_is_new: Dict[str, bool]
+    download_progress: Dict[str, Any]
     
     # Services
+    sys_monitor: Any
     chrome_service: Any
     downloader_service: Any
     tab_scanner: Any

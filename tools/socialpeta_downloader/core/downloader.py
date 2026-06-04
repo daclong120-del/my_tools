@@ -4,14 +4,13 @@ Responsibility: Parallel download workers, deduplication filtering thread, and s
 """
 
 import os
-import sys
 import time
-import json
 import shutil
 import queue
 import subprocess
 import requests
 import threading
+import traceback
 from datetime import datetime
 from typing import Any, Optional
 from socialpeta_downloader.config import settings
@@ -70,7 +69,6 @@ class DownloaderService:
                             f.write(chunk)
                 return True
         except Exception as e:
-            import traceback
             self.context.utils_service.log("warning", f"Lỗi tải file ảnh: {e}\n{traceback.format_exc()}")
         return False
 
@@ -103,8 +101,7 @@ class DownloaderService:
                     if candidate_item and candidate_item.get("status") == "pending":
                         item = candidate_item
                 except Exception as e:
-                    import traceback
-                    self.context.log("error", f"[-] Error querying metadata in downloader worker thread: {e}\n{traceback.format_exc()}")
+                    self.context.utils_service.log("error", f"[-] Error querying metadata in downloader worker thread: {e}\n{traceback.format_exc()}")
                 if not item:
                     lock.release()
             if not item:
@@ -180,7 +177,6 @@ class DownloaderService:
                     else:
                         self.context.disk_full = False
                 except Exception as e:
-                    import traceback
                     self.context.utils_service.log("warning", f"Lỗi kiểm tra dung lượng đĩa: {e}\n{traceback.format_exc()}")
                 print(f"[*] Worker: Bat dau tai media ({media_type}) Ad ID: {ad_id}")
                 os.makedirs(self.context.temp_download_dir, exist_ok=True)
@@ -225,7 +221,7 @@ class DownloaderService:
                                 ad_id, item.get("app_name", "UnknownApp"), dup_ad_id, f"Image MD5 match with {dup_ad_id}"
                             )
                         else:
-                            filename, stt = self.context.utils_service.get_unique_image_filename(
+                            filename, _ = self.context.utils_service.get_unique_image_filename(
                                 item.get("app_name", "UnknownApp"), image_url
                             )
                             target_dir = item.get("subfolder_path") or self.context.download_dir
@@ -245,14 +241,13 @@ class DownloaderService:
                                 self.context._write_item_file(json_copy_path, item)
                                 self.context.session_service.append_to_csv(item)
                             except Exception as e:
-                                import traceback
                                 self.context.utils_service.log("error", f"Lỗi di chuyển file ảnh Ad {ad_id}: {e}\n{traceback.format_exc()}")
                                 item["status"] = "failed"
                                 self.context.utils_service._save_item_state(item)
                     else:
-                        item["status"] = "failed"
-                        self.context.utils_service._save_item_state(item)
                         self.context.utils_service.log("error", f"Tải file ảnh thất bại cho Ad {ad_id}.")
+                        if ad_id in self.context.download_progress:
+                            self.context.download_progress[ad_id]['status'] = 'failed'
                     continue
                 
                 temp_output = os.path.join(self.context.temp_download_dir, f"{ad_id}.tmp")
@@ -266,25 +261,47 @@ class DownloaderService:
                     success = False
                     try:
                         import yt_dlp
-                        ydl_opts = {
-                            'outtmpl': temp_output,
-                            'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-                            'merge_output_format': 'mp4',
-                            'quiet': True,
-                            'no_warnings': True,
-                        }
-                        ffmpeg_path = settings.FFMPEG_PATH
-                        if ffmpeg_path and ffmpeg_path != "ffmpeg":
-                            ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_path)
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            ydl.download([item.get("youtube_url")])
+                        video_url = item.get("youtube_url") or item.get("cdn_url")
+                        if video_url:
+                            video_url_str = str(video_url)
+                            ydl_opts: Any = {
+                                'outtmpl': temp_output,
+                                'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+                                'merge_output_format': 'mp4',
+                                'quiet': True,
+                                'no_warnings': True,
+                            }
+                            ffmpeg_path = settings.FFMPEG_PATH
+                            if ffmpeg_path and ffmpeg_path != "ffmpeg":
+                                ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_path)
+                            
+                            def yt_dlp_progress_hook(d):
+                                if not self.context:
+                                    return
+                                if d['status'] == 'downloading':
+                                    percent_str = d.get('_percent_str', '0%').strip('\x1b[0;94m').strip('\x1b[0m').strip()
+                                    speed_str = d.get('_speed_str', 'Unknown').strip('\x1b[0;92m').strip('\x1b[0m').strip()
+                                    try:
+                                        p = float(percent_str.replace('%', ''))
+                                    except:
+                                        p = 0.0
+                                    self.context.download_progress[ad_id] = {
+                                        'type': 'YouTube', 'percent': p, 'speed': speed_str, 'status': 'downloading'
+                                    }
+                                elif d['status'] == 'finished':
+                                    self.context.download_progress[ad_id] = {
+                                        'type': 'YouTube', 'percent': 100.0, 'speed': '0', 'status': 'processing'
+                                    }
+                            ydl_opts['progress_hooks'] = [yt_dlp_progress_hook]
+                            
+                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                ydl.download([video_url_str])
                         if os.path.exists(temp_output):
                             success = True
                         elif os.path.exists(temp_output + ".mp4"):
                             shutil.move(temp_output + ".mp4", temp_output)
                             success = True
                     except Exception as e:
-                        import traceback
                         self.context.utils_service.log("error", f"yt-dlp failed for Ad {ad_id}: {e}\n{traceback.format_exc()}")
                     if success:
                         temp_mp4 = os.path.join(self.context.temp_download_dir, f"{ad_id}.mp4")
@@ -300,6 +317,8 @@ class DownloaderService:
                         item["status"] = "failed"
                         self.context.utils_service._save_item_state(item)
                         self.context.utils_service.log("error", f"Tải YouTube video thất bại cho Ad {ad_id}.")
+                        if ad_id in self.context.download_progress:
+                            self.context.download_progress[ad_id]['status'] = 'failed'
                     continue
                 
                 video_url = item.get("video_url", "").strip()
@@ -331,11 +350,29 @@ class DownloaderService:
                             self.context.session_service.append_to_csv(item)
                             break
                         response.raise_for_status()
+                        
+                        total_length = response.headers.get('content-length')
+                        total_length = int(total_length) if total_length else 0
+                        dl = 0
+                        start_time = time.time()
+                        
                         with open(temp_output, 'wb') as f:
                             for chunk in response.iter_content(chunk_size=16384):
                                 if not self.context.running or not chunk:
                                     break
+                                dl += len(chunk)
                                 f.write(chunk)
+                                
+                                if total_length > 0:
+                                    percent = (dl / total_length) * 100
+                                    elapsed = time.time() - start_time
+                                    speed = dl / elapsed if elapsed > 0 else 0
+                                    speed_mb = speed / (1024 * 1024)
+                                    speed_str = f"{speed_mb:.1f} MB/s"
+                                    self.context.download_progress[ad_id] = {
+                                        'type': 'CDN', 'percent': percent, 'speed': speed_str, 'status': 'downloading'
+                                    }
+                                    
                         if self.context.running:
                             if os.path.exists(temp_output) and os.path.getsize(temp_output) > 0:
                                 download_success = True
@@ -344,7 +381,6 @@ class DownloaderService:
                                 if os.path.exists(temp_output):
                                     os.remove(temp_output)
                     except Exception as ex:
-                        import traceback
                         self.context.utils_service.log("error", f"Lỗi tải video CDN cho Ad {ad_id} (Lần thử {attempt+1}): {ex}\n{traceback.format_exc()}")
                         if os.path.exists(temp_output):
                             os.remove(temp_output)
@@ -366,8 +402,9 @@ class DownloaderService:
                         item["status"] = "failed"
                         self.context.utils_service._save_item_state(item)
                         self.context.utils_service.log("error", f"Tải file video CDN thất bại cho Ad {ad_id} sau các lần thử.")
+                        if ad_id in self.context.download_progress:
+                            self.context.download_progress[ad_id]['status'] = 'failed'
             except Exception as e:
-                import traceback
                 self.context.utils_service.log("error", f"Lỗi không xác định trong download worker cho Ad {ad_id}: {e}\n{traceback.format_exc()}")
             finally:
                 lock = self.context.get_item_lock(fpath)
@@ -375,6 +412,8 @@ class DownloaderService:
                     lock.release()
                 except RuntimeError:
                     pass
+                if ad_id in getattr(self.context, 'download_progress', {}) and self.context.download_progress[ad_id].get('status') == 'processing':
+                    self.context.download_progress[ad_id]['status'] = 'done'
                 self.context.download_semaphore.release()
 
     def stream_3_dedup_filter(self):
@@ -385,7 +424,6 @@ class DownloaderService:
             subprocess.run([settings.FFMPEG_PATH, "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2.0)
             subprocess.run([settings.FFPROBE_PATH, "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2.0)
         except Exception as e:
-            import traceback
             self.context.utils_service.log("error", f"Lỗi: ffprobe/ffmpeg chưa được cài đặt hoặc bị lỗi! Sẽ bỏ qua lọc trùng nâng cao. (Đường dẫn: {settings.FFMPEG_PATH} / {settings.FFPROBE_PATH}): {e}\n{traceback.format_exc()}")
             
         while self.context.running:
@@ -437,7 +475,7 @@ class DownloaderService:
                     if youtube_url and youtube_url.strip():
                         self.context.session_service.update_master_youtube_url(dup_ad_id, youtube_url)
                 else:
-                    final_filename, stt = self.context.utils_service.get_unique_filename(item["app_name"])
+                    final_filename, _ = self.context.utils_service.get_unique_filename(item["app_name"])
                     target_dir = item.get("subfolder_path") or self.context.download_dir
                     os.makedirs(target_dir, exist_ok=True)
                     final_path = os.path.join(target_dir, final_filename)
@@ -462,12 +500,10 @@ class DownloaderService:
                         self.context._write_item_file(json_copy_path, item)
                         self.context.session_service.append_to_csv(item)
                     except Exception as e:
-                        import traceback
                         self.context.utils_service.log("error", f"Lỗi di chuyển file unique cho Ad {ad_id}: {e}\n{traceback.format_exc()}")
                         item["status"] = "failed"
                         self.context.utils_service._save_item_state(item)
             except Exception as outer_e:
-                import traceback
                 self.context.utils_service.log("error", f"Lỗi ở bộ lọc trùng lặp video Ad {ad_id}: {outer_e}\n{traceback.format_exc()}")
                 try:
                     if 'item' in locals() and isinstance(item, dict):

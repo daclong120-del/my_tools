@@ -216,6 +216,12 @@ class YoutubeService:
                                     const text = el.textContent || el.innerText || "";
                                     return text.includes("详情") || text.toLowerCase().includes("detail") || text.includes("Chi tiết");
                                 }) || bestCard.querySelector('button, [class*="btn"], [class*="detail"], a') || bestCard;
+                            if (btn.tagName && btn.tagName.toLowerCase() === 'a' && btn.hasAttribute('href')) {
+                                const hrefVal = btn.getAttribute('href');
+                                if (hrefVal && !hrefVal.includes('javascript') && !hrefVal.startsWith('#')) {
+                                    btn.removeAttribute('href');
+                                }
+                            }
                             btn.click();
                             return true;
                         }
@@ -530,6 +536,12 @@ class YoutubeService:
                                     const text = el.textContent || el.innerText || "";
                                     return text.includes("详情") || text.toLowerCase().includes("detail") || text.includes("Chi tiết");
                                 }) || bestCard.querySelector('button, [class*="btn"], [class*="detail"], a') || bestCard;
+                            if (btn.tagName && btn.tagName.toLowerCase() === 'a' && btn.hasAttribute('href')) {
+                                const hrefVal = btn.getAttribute('href');
+                                if (hrefVal && !hrefVal.includes('javascript') && !hrefVal.startsWith('#')) {
+                                    btn.removeAttribute('href');
+                                }
+                            }
                             btn.click();
                             return true;
                         }

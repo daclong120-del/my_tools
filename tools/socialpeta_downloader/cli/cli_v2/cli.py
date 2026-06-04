@@ -45,9 +45,8 @@ from rich.live import Live
 from rich.console import Group
 from rich.text import Text
 
-# TKinter for folder selection dialog
-import tkinter as tk
-from tkinter import filedialog
+# Use subprocess for folder selection dialog without UI dependencies
+import subprocess
 
 # Global console
 console = Console()
@@ -67,6 +66,34 @@ class AppState:
     chrome_port = 9222
     thread_count = 3
 
+global_logs = []
+MAX_LOGS = 10
+
+class StdoutRedirector:
+    def __init__(self, original_stdout):
+        self.original_stdout = original_stdout
+        self.buffer = ""
+
+    def write(self, data):
+        if not data: return
+        self.buffer += data
+        while "\n" in self.buffer:
+            line, self.buffer = self.buffer.split("\n", 1)
+            line = line.strip()
+            if line:
+                ts = datetime.now().strftime("%H:%M:%S")
+                if not line.startswith("["):
+                    line = f"[INFO] {line}"
+                global_logs.append(f"{ts} {line}")
+                if len(global_logs) > MAX_LOGS:
+                    global_logs.pop(0)
+
+    def flush(self):
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self.original_stdout, name)
+
 
 def show_banner():
     try:
@@ -84,15 +111,24 @@ def show_banner():
 
 def ask_directory_dialog(initial_dir):
     try:
-        root = tk.Tk()
-        root.withdraw()
-        root.wm_attributes('-topmost', 1)
-        selected_dir = filedialog.askdirectory(
-            initialdir=initial_dir,
-            title="Chọn thư mục lưu file tải về"
+        ps_script = f"""
+        Add-Type -AssemblyName System.windows.forms
+        $f = New-Object System.Windows.Forms.FolderBrowserDialog
+        $f.Description = "Chọn thư mục lưu file tải về"
+        $f.ShowNewFolderButton = $true
+        $f.SelectedPath = "{initial_dir}"
+        if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{
+            Write-Output $f.SelectedPath
+        }}
+        """
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
         )
-        root.destroy()
-        return selected_dir
+        path = result.stdout.strip()
+        if path:
+            return path
+        return initial_dir
     except Exception as e:
         print(f"\n[-] Không thể mở Folder Explorer ({e}).")
         ans = input(f"Nhập đường dẫn thư mục thủ công (Mặc định: {initial_dir}): ").strip()
@@ -178,10 +214,55 @@ def make_dashboard(core, tab_index):
 
     stats_panel = Panel(table, title="[bold blue]THỐNG KÊ TIẾN TRÌNH TẢI[/]", border_style="blue")
 
+    # 4. Logs Panel
+    log_text = Text()
+    if not global_logs:
+        log_text.append("Đang chờ dữ liệu...\n", style="dim")
+    else:
+        for log_line in global_logs:
+            lower_line = log_line.lower()
+            if "[error]" in lower_line or "[-] " in log_line or "fail" in lower_line or "loi" in lower_line:
+                log_text.append(f"{log_line}\n", style="red")
+            elif "[warning]" in lower_line or "[!]" in log_line:
+                log_text.append(f"{log_line}\n", style="yellow")
+            elif "[+]" in log_line or "thanh cong" in lower_line or "done" in lower_line:
+                log_text.append(f"{log_line}\n", style="green")
+            else:
+                log_text.append(f"{log_line}\n", style="white")
+
+    logs_panel = Panel(log_text, title="[bold green]NHẬT KÝ HOẠT ĐỘNG (LOGS)[/]", border_style="green")
+
+    # 5. Progress Panel
+    progress_text = Text()
+    if hasattr(core, "download_progress") and core.download_progress:
+        active_downloads = {k: v for k, v in core.download_progress.items() if v.get('status') == 'downloading' or v.get('status') == 'processing'}
+        if not active_downloads:
+            progress_text.append("Không có tiến trình tải nào đang diễn ra...\n", style="dim")
+        else:
+            for ad_id, info in active_downloads.items():
+                p = info.get('percent', 0.0)
+                status = info.get('status')
+                filled = int((p / 100.0) * 20)
+                bar = "▓" * filled + "░" * (20 - filled)
+                speed = info.get('speed', '0 MB/s')
+                dl_type = info.get('type', 'Unknown')
+                progress_text.append(f"- Ad #{ad_id}: ", style="bold white")
+                progress_text.append(f"{bar} {p:5.1f}% ", style="cyan")
+                if status == 'processing':
+                    progress_text.append(f"[Đang xử lý/Lọc trùng...]\n", style="yellow")
+                else:
+                    progress_text.append(f"[Tải {dl_type}: {speed}]\n", style="dim white")
+    else:
+        progress_text.append("Không có tiến trình tải nào đang diễn ra...\n", style="dim")
+        
+    progress_panel = Panel(progress_text, title="[bold cyan]ĐANG TẢI VIDEO[/]", border_style="cyan")
+
     return Group(
         info_panel,
         tab_panel,
-        stats_panel
+        stats_panel,
+        progress_panel,
+        logs_panel
     )
 
 
@@ -381,6 +462,7 @@ def main_menu():
 
             # 7. Start system and run scraper thread
             core.download_mode = selected_mode
+            core.quiet_mode = True  # Prevent utils_service.log from printing to stdout, avoiding duplicates
             print(f"\n[*] Đang khởi động hệ thống cào tải với số luồng = {AppState.thread_count}...")
             
             # Reset the state of the selected tab to avoid race conditions/stale status
@@ -401,11 +483,28 @@ def main_menu():
 
             # Dashboard loop
             aborted = False
+            original_stdout = sys.stdout
+            redirector = StdoutRedirector(original_stdout)
+            sys.stdout = redirector
+
             try:
                 with Live(auto_refresh=False, console=console) as live:
                     while True:
                         tab_state = core.tab_states.get(selected_tab, {})
                         tab_status = tab_state.get("status", "unknown")
+
+                        # Drain log queue
+                        while not core.log_queue.empty():
+                            try:
+                                msg = core.log_queue.get_nowait()
+                                ts = msg.get("timestamp", datetime.now().strftime("%H:%M:%S"))
+                                level = msg.get("type", "info").upper()
+                                text = msg.get("message", "")
+                                global_logs.append(f"{ts} [{level}] {text}")
+                                if len(global_logs) > MAX_LOGS:
+                                    global_logs.pop(0)
+                            except queue.Empty:
+                                break
 
                         # Draw the live dashboard
                         dashboard_renderable = make_dashboard(core, selected_tab)
@@ -431,6 +530,8 @@ def main_menu():
                         time.sleep(0.5)
             except KeyboardInterrupt:
                 aborted = True
+            finally:
+                sys.stdout = original_stdout
 
             # Stop & Cleanup
             console.clear()

@@ -12,9 +12,13 @@ class Settings:
     if user_data_path:
         ROOT_DIR = user_data_path
     elif getattr(sys, 'frozen', False):
-        # Running as compiled binary (sys.executable is path to api.exe)
-        # We put data folder in the directory of the executable
-        ROOT_DIR = os.path.dirname(sys.executable)
+        # Running as compiled binary (sys.executable is path to api.exe or CLI exe)
+        # We put data folder in the directory of the executable or its parent if inside app_core
+        exe_dir = os.path.dirname(sys.executable)
+        if os.path.basename(exe_dir).lower() == "app_core":
+            ROOT_DIR = os.path.dirname(exe_dir)
+        else:
+            ROOT_DIR = exe_dir
     else:
         # Running in dev mode
         ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

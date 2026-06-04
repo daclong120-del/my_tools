@@ -1,5 +1,5 @@
 ---
-trigger: always_on
+trigger: glob
 description: Rule cốt lõi bắt buộc về thiết kế web. AI agent PHẢI tuân thủ 100% khi tạo/chỉnh sửa file web.
 globs: "**/*.{html,css,js,jsx,tsx,ts,vue,svelte,astro}"
 ---
