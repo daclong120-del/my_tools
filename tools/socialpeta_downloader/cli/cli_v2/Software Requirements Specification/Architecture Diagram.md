@@ -59,7 +59,7 @@ graph TD
     Sniffer -->|Nâng cấp Youtube| YTService
     
     YTService -->|4. Lưu trạng thái & Ghi nhận| SQLiteDB
-    Sniffer -->|Trì hoãn lưu JSON tạm| FileStore
+    Sniffer -->|Trì hoãn cập nhật status = pending| SQLiteDB
     
     Downloader -->|Gọi tải| YTDLP
     Downloader -->|Gọi tải| HTTPClient
@@ -87,7 +87,7 @@ graph TD
 ### 2.3. Lớp Tự động hóa và Cào quét (Browser Layer)
 * **`tab_manager.py`**: Kết nối tới trình duyệt Chrome qua cổng debug bằng giao thức CDP (Chrome DevTools Protocol). Trích xuất tên game/ứng dụng để tự tạo thư mục lưu.
 * **`sniffer.py`**: Lắng nghe sự kiện gói tin phản hồi mạng. Khi nhận thấy gói tin `/creative/list`, tiến hành phân tách tài nguyên. Điều khiển phân trang tự động và thực hiện cơ chế kích hoạt lại (Soft Trigger) khi trang web bị đứng.
-* **`youtube.py`**: Chứa thuật toán khớp điểm (**Scoring Matcher**) để tìm đúng card quảng cáo YouTube cần click, ra lệnh cho trình duyệt click mở modal chi tiết, trích xuất link YouTube gốc và đóng modal.
+* **`youtube.py`**: Chứa thuật toán khớp điểm (**Scoring Matcher**) để tìm đúng card quảng cáo YouTube cần click (bắt buộc kiểm tra sự hiện diện của icon YouTube nhằm tránh click nhầm sang các nền tảng khác như Admob), ra lệnh cho trình duyệt click mở modal chi tiết, trích xuất link YouTube gốc và đóng modal.
 
 ### 2.4. Lớp Tải xuống song song (Download Layer)
 * **`downloader.py`**: Lấy các tệp tin từ hàng đợi tải xuống (`pending_downloads`). Tự động nhận diện loại tệp tin để phân phối: gọi `yt-dlp` đối với link YouTube, hoặc gọi tải HTTP thông thường đối với ảnh và video gốc CDN. Lưu trữ tạm thời vào thư mục ẩn `.temp_download`.

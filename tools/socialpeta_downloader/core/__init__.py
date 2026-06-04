@@ -57,9 +57,27 @@ class SocialPetaDownloaderCore:
         self.audit_csv_path = os.path.join(self.download_dir, "duplicate_audit.csv")
         self.temp_download_dir = os.path.join(self.download_dir, ".temp_download")
         self.temp_queue_dir = os.path.join(self.download_dir, ".temp")
-        os.makedirs(self.download_dir, exist_ok=True)
-        os.makedirs(self.temp_download_dir, exist_ok=True)
-        os.makedirs(self.temp_queue_dir, exist_ok=True)
+        
+        try:
+            os.makedirs(self.download_dir, exist_ok=True)
+            os.makedirs(self.temp_download_dir, exist_ok=True)
+            os.makedirs(self.temp_queue_dir, exist_ok=True)
+        except Exception as e:
+            # Tự động chuyển về thư mục Downloads mặc định trên ổ C của Windows nếu đường dẫn/ổ đĩa không hợp lệ
+            default_dir = self.get_default_download_dir()
+            print(f"[-] Không thể tạo thư mục {new_dir}: {e}. Đang chuyển về thư mục mặc định: {default_dir}")
+            self.download_dir = default_dir
+            self.temp_json_path = os.path.join(self.download_dir, "download_temp.json")
+            self.csv_path = os.path.join(self.download_dir, "download_info.csv")
+            self.audit_csv_path = os.path.join(self.download_dir, "duplicate_audit.csv")
+            self.temp_download_dir = os.path.join(self.download_dir, ".temp_download")
+            self.temp_queue_dir = os.path.join(self.download_dir, ".temp")
+            try:
+                os.makedirs(self.download_dir, exist_ok=True)
+                os.makedirs(self.temp_download_dir, exist_ok=True)
+                os.makedirs(self.temp_queue_dir, exist_ok=True)
+            except Exception as ex:
+                print(f"[-] Lỗi nghiêm trọng: Không thể tạo thư mục mặc định {default_dir}: {ex}")
 
         if hasattr(self, "session_service") and self.session_service:
             self.session_service.init_db()
@@ -76,6 +94,9 @@ class SocialPetaDownloaderCore:
                 stored_dir = cfg.get("download_dir")
                 if stored_dir:
                     self.update_download_dir(stored_dir)
+                    # Nếu xảy ra fallback trong update_download_dir, cập nhật lại config.json
+                    if self.download_dir != stored_dir:
+                        self.save_config(self.download_dir)
                     return
             except Exception as e:
                 import traceback
@@ -87,9 +108,9 @@ class SocialPetaDownloaderCore:
         config_path = os.path.join(settings.DATA_DIR, "config.json")
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
         try:
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump({"download_dir": new_dir}, f, indent=4, ensure_ascii=False)
             self.update_download_dir(new_dir)
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump({"download_dir": self.download_dir}, f, indent=4, ensure_ascii=False)
         except Exception as e:
             import traceback
             self.log("error", f"[-] Failed to save config: {e}\n{traceback.format_exc()}")

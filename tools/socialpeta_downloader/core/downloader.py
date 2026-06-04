@@ -431,6 +431,11 @@ class DownloaderService:
                     item["dedup_status"] = "trùng lặp"
                     self.context.utils_service._save_item_state(item)
                     self.context.session_service.append_to_audit_csv(ad_id, item["app_name"], dup_ad_id, reason)
+                    
+                    # Gộp liên kết youtube_url sang tệp gốc (Master File) để tránh mất liên kết
+                    youtube_url = item.get("youtube_url")
+                    if youtube_url and youtube_url.strip():
+                        self.context.session_service.update_master_youtube_url(dup_ad_id, youtube_url)
                 else:
                     final_filename, stt = self.context.utils_service.get_unique_filename(item["app_name"])
                     target_dir = item.get("subfolder_path") or self.context.download_dir

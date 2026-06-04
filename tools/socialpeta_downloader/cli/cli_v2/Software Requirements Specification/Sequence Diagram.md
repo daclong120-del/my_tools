@@ -59,7 +59,7 @@ sequenceDiagram
             else Nếu quảng cáo là Video Youtube (Phát hiện icon/chữ Youtube trên DOM)
                 Scanner->>Scanner: Đẩy thông tin vào hàng đợi xử lý click Youtube
             else Nếu quảng cáo là Video CDN (video gốc của Facebook/TikTok)
-                Scanner->>Scanner: Lưu thông tin vào file JSON tạm thời (trì hoãn chưa tải)
+                Scanner->>DB: Lưu trạng thái vào SQLite với status = pending, media_type = video (trì hoãn chưa tải)
             end
         end
 
@@ -76,8 +76,10 @@ sequenceDiagram
         end
 
         %% Xử lý video CDN sau
-        Note over Scanner,DL: Sau khi xử lý xong hết video Youtube -> Mới đưa video CDN tạm vào hàng đợi
-        Scanner->>DL: Đẩy toàn bộ video CDN từ file JSON tạm vào hàng đợi tải xuống
+        Note over Scanner,DL: Sau khi xử lý xong hết video Youtube -> Mới đưa video CDN từ SQLite vào hàng đợi
+        Scanner->>DB: Truy vấn danh sách video CDN có status = pending
+        DB-->>Scanner: Trả về danh sách video CDN
+        Scanner->>DL: Đẩy danh sách video CDN vào hàng đợi tải xuống
     end
     deactivate Scanner
 
@@ -119,6 +121,9 @@ sequenceDiagram
 * Ở bước số **12** (`_is_ad_already_downloading_or_done`), hệ thống kiểm tra ngay trong cơ sở dữ liệu SQLite để xem ID quảng cáo đã từng được tải hoặc đang xử lý click chưa. Nếu rồi thì bỏ qua ngay.
 * Ở bước số **23** (`Cập nhật loại tài nguyên = youtube_video`), sau khi lấy được liên kết YouTube thực tế, hệ thống cập nhật lại loại tài nguyên trong DB. Điều này giúp ngăn chặn trình duyệt click lại lần 2 vào quảng cáo này trong các lượt cuộn trang tiếp theo.
 
-### 2.2. Trì hoãn tải Video CDN gốc
-* Do video CDN của SocialPeta thường dễ tải hơn và không cần tương tác nhấp chuột, hệ thống trì hoãn việc tải chúng (bước **18**) bằng cách lưu tạm vào tệp JSON.
-* Hệ thống chỉ đưa video CDN vào hàng đợi tải xuống (bước **25**) sau khi đã hoàn thành click mở modal để cào hết tất cả các đường dẫn video YouTube. Điều này tối ưu hóa việc phân phối tài nguyên hệ thống và không làm nghẽn luồng xử lý của trình duyệt Playwright.
+### 2.2. Nhận diện chính xác card YouTube (Tránh click nhầm Admob/các mạng khác)
+* Ở bước số **21** (`Playwright cuộn tới card và nhấn nút "Chi tiết"`), thuật toán chấm điểm (Scoring Matcher) trong `youtube.py` lọc cứng và chỉ chấm điểm những card quảng cáo chứa icon của nền tảng YouTube (`.net-icon-youtube` hoặc tương đương). Nếu card không chứa icon YouTube, nó sẽ bị loại bỏ khỏi danh sách ứng viên click, ngăn chặn việc click nhầm vào các card quảng cáo của Admob, Facebook, TikTok... dù có trùng lặp hình ảnh/video hash hoặc App Name.
+
+### 2.3. Trì hoãn tải Video CDN gốc
+* Do video CDN của SocialPeta thường dễ tải hơn và không cần tương tác nhấp chuột, hệ thống trì hoãn việc tải chúng bằng cách lưu thông tin trực tiếp vào cơ sở dữ liệu SQLite dưới trạng thái chờ (`pending`).
+* Hệ thống chỉ truy vấn các bản ghi video CDN này từ SQLite để đưa vào hàng đợi tải xuống sau khi đã hoàn thành click mở modal để cào hết tất cả các đường dẫn video YouTube trên trang hiện tại. Điều này tối ưu hóa việc phân phối tài nguyên hệ thống, tránh sử dụng các file JSON tạm thời làm mất đồng bộ dữ liệu và không làm nghẽn luồng xử lý của trình duyệt Playwright.

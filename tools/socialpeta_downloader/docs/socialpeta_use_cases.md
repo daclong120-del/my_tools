@@ -80,7 +80,7 @@ Filter thread  × 1      →  singleton, xử lý output từ tất cả tab
 
 Tệp database lưu trữ lịch sử tải xuống và siêu dữ liệu của ứng dụng.
 - **Vị trí lưu trữ:** Luôn nằm động trực tiếp tại thư mục tải xuống hiện tại được chọn (`settings.DOWNLOAD_DIR`).
-- **Đường dẫn tệp tin (`saved_path`):** Đường dẫn file tải về lưu trong DB phải là đường dẫn tương đối (Relative Path) tính từ `DOWNLOAD_DIR` (ví dụ: `App_Name/video.mp4` thay vì `D:\Downloads\App_Name\video.mp4`). Điều này đảm bảo tính di động khi người dùng sao chép hoặc di chuyển toàn bộ thư mục.
+- **Đường dẫn tệp tin (`saved_path`):** Đường dẫn file tải về lưu trong DB phải là đường dẫn tương đối (Relative Path) tính từ `DOWNLOAD_DIR` (ví dụ: `App_Name/video.mp4` thay vì `C:\Users\<Tên_User>\Downloads\SocialPeta_Downloader\App_Name\video.mp4`). Điều này đảm bảo tính di động khi người dùng sao chép hoặc di chuyển toàn bộ thư mục.
 - **Khi đổi thư mục tải xuống:** Hệ thống ngắt kết nối database cũ, mở/tạo tệp `db.sqlite3` mới tại thư mục mới và tự động khởi tạo lại cấu trúc bảng.
 
 ### `download_temp.json` (per tab, trong `.temp/tabN/`)
@@ -577,7 +577,7 @@ UC bổ sung:
 1. Mở hộp thoại chọn thư mục native của hệ điều hành.
 2. User điều hướng và chọn thư mục mong muốn.
 3. Chương trình lưu đường dẫn vào file config (`config.json` hoặc tương đương).
-4. Hiển thị xác nhận: `Thư mục lưu: D:\Downloads\SocialPeta`
+4. Hiển thị xác nhận: `Thư mục lưu: C:\Users\<Tên_User>\Downloads\SocialPeta_Downloader`
 5. Tất cả file tải về từ lúc này được lưu vào thư mục đó.
 6. Hệ thống thực hiện ngắt kết nối database cũ và gọi `UC-F02` để thiết lập cơ sở dữ liệu mới tại thư mục vừa được chọn.
 

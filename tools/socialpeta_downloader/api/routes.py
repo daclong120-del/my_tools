@@ -200,7 +200,7 @@ def update_config(data: ConfigUpdate):
     
     # Yêu cầu đường dẫn tuyệt đối (không cho phép đường dẫn tương đối)
     if not os.path.isabs(download_dir):
-        raise HTTPException(status_code=400, detail="Đường dẫn phải là đường dẫn tuyệt đối (ví dụ: D:\\Downloads).")
+        raise HTTPException(status_code=400, detail="Đường dẫn phải là đường dẫn tuyệt đối (ví dụ: C:\\Users\\<Tên_User>\\Downloads).")
     
     # Chuẩn hóa đường dẫn
     download_dir = os.path.realpath(os.path.abspath(download_dir))
@@ -213,7 +213,7 @@ def update_config(data: ConfigUpdate):
     import re
     if os.name == "nt":
         if not re.match(r'^[A-Za-z]:\\', download_dir):
-            raise HTTPException(status_code=400, detail="Đường dẫn phải nằm trên ổ đĩa cục bộ (ví dụ: D:\\Downloads).")
+            raise HTTPException(status_code=400, detail="Đường dẫn phải nằm trên ổ đĩa cục bộ (ví dụ: C:\\Users\\<Tên_User>\\Downloads).")
     else:
         if not download_dir.startswith("/"):
             raise HTTPException(status_code=400, detail="Đường dẫn phải là đường dẫn tuyệt đối.")

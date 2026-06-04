@@ -432,20 +432,32 @@ class TabScanner:
                     time.sleep(0.5)
                 
                 # Day not cac video CDN pending con sot (neu co) truoc khi dung scraper
-                tab_dir = os.path.join(self.context.temp_queue_dir, f"tab{tab_index}")
                 new_cdn_videos_count = 0
-                if os.path.exists(tab_dir):
-                    for fname in os.listdir(tab_dir):
-                        if fname.endswith(".json"):
-                            fpath = os.path.join(tab_dir, fname)
+                db_path = self.context.utils_service.get_db_path()
+                if os.path.exists(db_path):
+                    import sqlite3
+                    import json
+                    conn = sqlite3.connect(db_path, timeout=10.0)
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute("PRAGMA busy_timeout=5000;")
+                    try:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT ad_id, fpath, item_json FROM ad_metadata WHERE status = 'pending'")
+                        for ad_id, fpath, item_json in cursor.fetchall():
                             try:
-                                ad_id = fname[:-5]
-                                db_item = self.context.utils_service.db_get_item(ad_id)
-                                if db_item and db_item.get("status") == "pending" and db_item.get("media_type") == "video":
-                                    self.context.pending_downloads.put((time.time(), fpath))
-                                    new_cdn_videos_count += 1
+                                norm_fpath = os.path.normpath(fpath)
+                                parts = norm_fpath.replace("\\", "/").split("/")
+                                if f"tab{tab_index}" in parts:
+                                    item = json.loads(item_json)
+                                    if item.get("media_type") == "video":
+                                        self.context.pending_downloads.put((time.time(), fpath))
+                                        new_cdn_videos_count += 1
                             except Exception:
                                 pass
+                    except Exception as ex:
+                        print(f"[-] Tab {tab_index}: Loi truy van video pending tu SQLite: {ex}")
+                    finally:
+                        conn.close()
                 if new_cdn_videos_count > 0:
                     self.context.tab_states[tab_index]["scraped_count"] += new_cdn_videos_count
                     print(f"[+] Tab {tab_index}: Da day not {new_cdn_videos_count} video CDN pending con lai vao hang doi tai.")

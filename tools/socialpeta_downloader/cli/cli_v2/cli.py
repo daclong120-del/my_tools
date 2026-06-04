@@ -261,6 +261,7 @@ def configure_settings(core):
             if new_dir:
                 AppState.download_dir = os.path.abspath(new_dir)
                 core.save_config(AppState.download_dir)
+                AppState.download_dir = core.download_dir
                 print(f"{GREEN}[+] Cập nhật thư mục tải thành: {AppState.download_dir}{RESET}")
             time.sleep(1.5)
 

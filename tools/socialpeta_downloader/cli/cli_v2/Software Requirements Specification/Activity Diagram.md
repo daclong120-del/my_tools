@@ -55,7 +55,7 @@ flowchart TD
     CheckDB -- "Chưa tồn tại" --> UpgradeYT{Phát hiện icon/chữ Youtube trên DOM?}:::decision
     
     UpgradeYT -- "Có" --> MarkYT[Nâng cấp media_type = youtube_click_required<br>Đẩy vào Hàng đợi xử lý Youtube]:::process
-    UpgradeYT -- "Không (Video CDN)" --> DeferCDN[Lưu tạm trạng thái vào file JSON<br>Trì hoãn chưa tải]:::process
+    UpgradeYT -- "Không (Video CDN)" --> DeferCDN[Lưu thông tin vào SQLite<br>status = pending, media_type = video<br>Trì hoãn chưa tải]:::process
     
     SkipItem --> NextAd{Còn ad nào trong trang?}:::decision
     MarkYT --> NextAd
@@ -78,7 +78,7 @@ flowchart TD
     CloseModal --> MoreYT{Còn card Youtube cần click?}:::decision
     MoreYT -- "Còn" --> ClickCard
     
-    MoreYT -- "Hết" --> ReleaseCDN[Đẩy toàn bộ video CDN từ JSON tạm vào hàng đợi tải xuống]:::process
+    MoreYT -- "Hết" --> ReleaseCDN[Truy vấn video CDN pending từ SQLite<br>Đẩy vào hàng đợi tải xuống]:::process
     
     ReleaseCDN --> NextPage{Đã cào đủ số trang cấu hình?}:::decision
     NextPage -- "Chưa đủ" --> ClickNextPage[Click nút chuyển sang trang tiếp theo]:::process

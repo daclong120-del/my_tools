@@ -422,6 +422,54 @@ class SessionService:
             # Sync duplicate audit to CSV under lock
             self.sync_audit_db_to_csv()
 
+    def update_master_youtube_url(self, master_ad_id: str, youtube_url: str):
+        if not self.context:
+            return
+            
+        # 1. Update ad_metadata table (JSON state on disk/db)
+        try:
+            master_item = self.context.utils_service.db_get_item(master_ad_id)
+            if master_item:
+                existing_yt = master_item.get("youtube_url")
+                if not existing_yt or existing_yt.strip() == "":
+                    master_item["youtube_url"] = youtube_url
+                    self.context.utils_service._save_item_state(master_item)
+                    print(f"[+] Updated youtube_url in ad_metadata for master ad {master_ad_id}")
+        except Exception as e:
+            if self.context:
+                self.context.log("error", f"[-] Loi cap nhat ad_metadata cho master ad: {e}")
+
+        # 2. Update download_history table (CSV state)
+        with self.context.history_lock:
+            import sqlite3
+            db_path = self.context.get_db_path()
+            conn = sqlite3.connect(db_path, timeout=10.0)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout=5000;")
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT youtube_url FROM download_history WHERE ad_id = ?", (master_ad_id,))
+                r = cursor.fetchone()
+                if r:
+                    existing_url = r[0]
+                    if not existing_url or existing_url.strip() == "":
+                        cursor.execute("""
+                            UPDATE download_history
+                            SET youtube_url = ?
+                            WHERE ad_id = ?
+                        """, (youtube_url, master_ad_id))
+                        conn.commit()
+                        print(f"[+] Updated youtube_url in download_history for master ad {master_ad_id} to {youtube_url}")
+            except Exception as e:
+                import traceback
+                if self.context:
+                    self.context.log("error", f"[-] Loi update youtube_url trong download_history: {e}\n{traceback.format_exc()}")
+            finally:
+                conn.close()
+            
+            # Sync SQLite history to CSV file under lock
+            self.sync_db_to_csv()
+
     def sync_db_to_csv(self):
         """
         Export all records from SQLite download_history to download_info.csv inside the active workspace.

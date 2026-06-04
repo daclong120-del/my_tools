@@ -75,6 +75,12 @@ class YoutubeService:
                         let maxScore = 0;
                         
                         for (const c of cards) {
+                            const hasYoutubeIcon = !!c.querySelector('.net-icon-youtube') || 
+                                                   !!c.querySelector('[class*="net-icon-youtube"]') ||
+                                                   !!c.querySelector('[class*="-youtube"]');
+                            if (!hasYoutubeIcon) {
+                                continue;
+                            }
                             let score = 0;
                             const cardText = (c.innerText || c.textContent || "").toLowerCase();
                             
@@ -193,9 +199,6 @@ class YoutubeService:
                             }
                             
                             // 4. Kiem tra icon YouTube tren card (3 diem)
-                            const hasYoutubeIcon = !!c.querySelector('.net-icon-youtube') || 
-                                                   !!c.querySelector('[class*="net-icon-youtube"]') ||
-                                                   !!c.querySelector('[class*="-youtube"]');
                             if (hasYoutubeIcon) {
                                 score += 3;
                             }
@@ -386,6 +389,12 @@ class YoutubeService:
                         let maxScore = 0;
                         
                         for (const c of cards) {
+                            const hasYoutubeIcon = !!c.querySelector('.net-icon-youtube') || 
+                                                   !!c.querySelector('[class*="net-icon-youtube"]') ||
+                                                   !!c.querySelector('[class*="-youtube"]');
+                            if (!hasYoutubeIcon) {
+                                continue;
+                            }
                             let score = 0;
                             const cardText = (c.innerText || c.textContent || "").toLowerCase();
                             
@@ -504,9 +513,6 @@ class YoutubeService:
                             }
                             
                             // 4. Kiem tra icon YouTube tren card (3 diem)
-                            const hasYoutubeIcon = !!c.querySelector('.net-icon-youtube') || 
-                                                   !!c.querySelector('[class*="net-icon-youtube"]') ||
-                                                   !!c.querySelector('[class*="-youtube"]');
                             if (hasYoutubeIcon) {
                                 score += 3;
                             }

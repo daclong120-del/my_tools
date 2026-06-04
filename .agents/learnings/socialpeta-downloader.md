@@ -1,7 +1,7 @@
 # SocialPeta Downloader
 
 > Tổng hợp kiến thức về công cụ tự động hóa tải video SocialPeta trong dự án.
-> Cập nhật lần cuối: 2026-06-03
+> Cập nhật lần cuối: 2026-06-04
 
 ---
 
@@ -279,6 +279,20 @@
   2. Click chính xác vào icon: Nhắm mục tiêu click trực tiếp vào icon nền tảng YouTube ở góc dưới card quảng cáo (`.net-icon-youtube`), tăng độ tin cậy mở hộp popup.
   3. Tránh overwrite CDN: Khi sniffer bắt được request CDN của quảng cáo đang chờ YouTube click, nó không ghi đè trạng thái `pending` của YouTube ad mà lưu tạm file JSON vào thư mục tạm `tab{tab_index}`. Sau khi worker YouTube hoàn tất (hoặc scraper thread kết thúc), hệ thống sẽ quét dọn các file tạm này để tải CDN dự phòng nếu YouTube extraction thất bại.
 - **Files liên quan**: `tools/socialpeta_downloader/core/sniffer.py`, `tools/socialpeta_downloader/core/youtube.py`, `tools/socialpeta_downloader/core/tab_manager.py`
+
+### Click nhầm card Admob khi cào YouTube (Scoring Matcher logic leak)
+- **Ngày**: 2026-06-04
+- **Vấn đề**: Khi cào video YouTube, hệ thống click nhầm vào card Admob (hoặc các mạng khác) có cùng nội dung sáng tạo (trùng hash, app name, title).
+- **Root cause**: Thuật toán chấm điểm (`Scoring Matcher`) trong `youtube.py` chỉ cộng thêm 3 điểm nếu có icon YouTube (`hasYoutubeIcon`), nhưng không bắt buộc card phải có icon này. Một card Admob trùng khớp nội dung (hash + app name + title) có thể đạt điểm số cao (35 điểm) và được chọn làm `bestCard` trước khi card YouTube được cuộn tới.
+- **Fix**: Sửa đổi logic chấm điểm trong JS của `youtube.py` bằng cách lọc cứng điều kiện `if (!hasYoutubeIcon) continue;` để loại bỏ các card không phải YouTube trước khi tính điểm.
+- **Files liên quan**: `tools/socialpeta_downloader/core/youtube.py`, `tools/socialpeta_downloader/cli/cli_v2/Software Requirements Specification/Functional Requirements.md`
+
+### Sniffer nâng cấp sai platform không phải YouTube sang youtube_click_required
+- **Ngày**: 2026-06-04
+- **Vấn đề**: Các quảng cáo không phải YouTube (như Admob, Facebook, TikTok) có cùng asset hoặc text với card YouTube hiển thị trên giao diện bị sniffer nâng cấp nhầm thành `youtube_click_required`, khiến chúng được chuyển sang luồng tải YouTube, gây lỗi trùng lặp và kích thước tệp tải về bằng 0.
+- **Root cause**: Trong `sniffer.py`, hàm `_upgrade_youtube_items_via_dom` truy vấn toàn bộ item pending có `media_type = "video"` mà không kiểm tra xem platform thực tế của item đó có phải là `youtube` hay không.
+- **Fix**: Thêm bộ lọc `platform = item.get("platform", "").lower(); if platform != "youtube": continue` để bỏ qua các item thuộc platform khác.
+- **Files liên quan**: `tools/socialpeta_downloader/core/sniffer.py`
 
 ---
 

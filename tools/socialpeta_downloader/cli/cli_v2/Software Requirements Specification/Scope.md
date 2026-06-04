@@ -20,7 +20,7 @@ Tài liệu này xác định ranh giới hoạt động của hệ thống **So
 
 ### 1.3. Tải xuống đa luồng và Lọc trùng lặp
 * **Tải xuống song song**: Tải ảnh và video CDN bằng HTTP Client; tải video YouTube bằng `yt-dlp`.
-* **Trì hoãn tải CDN**: Toàn bộ video gốc CDN được lưu tạm vào tệp JSON và chỉ đưa vào hàng đợi tải sau khi đã click cào xong toàn bộ link YouTube của trang đó.
+* **Trì hoãn tải CDN**: Toàn bộ video gốc CDN được lưu tạm trạng thái vào cơ sở dữ liệu SQLite và chỉ truy vấn từ SQLite để đưa vào hàng đợi tải sau khi đã click cào xong toàn bộ link YouTube của trang đó.
 * **Bộ lọc trùng lặp 3 lớp**:
   - So sánh thời lượng video (`ffprobe`).
   - So sánh mã hóa MD5 của luồng âm thanh PCM (`ffmpeg`).
