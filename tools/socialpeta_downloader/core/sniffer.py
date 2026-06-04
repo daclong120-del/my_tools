@@ -17,11 +17,13 @@ class SnifferService:
     def __init__(self, context: Optional[IEngineContext] = None):
         self.context = context
 
+    # hàm đã hoạt động rồi đừng động vào
     def _recursive_find_creatives(self, obj) -> List[dict]:
         if self.context and self.context.utils_service:
             return self.context.utils_service._recursive_find_creatives(obj)
         return []
 
+    # hàm đã hoạt động rồi đừng động vào
     def _parse_creative_item(self, raw_item: dict) -> dict:
         if self.context and self.context.utils_service:
             return self.context.utils_service._parse_creative_item(raw_item)
@@ -180,7 +182,10 @@ class SnifferService:
                     success = True
             else:
                 try:
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    try:
+                        page.keyboard.press("End")
+                    except Exception:
+                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                     time.sleep(0.8)
                 except Exception:
                     pass
@@ -202,7 +207,10 @@ class SnifferService:
                         print(f"[-] Tab {tab_index} Retry {retry}/3: Khong tim thay hoac khong the click Trang {page_num}. Scroll va thu lai...")
                         try:
                             page.keyboard.press("Escape")
-                            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                            try:
+                                page.keyboard.press("End")
+                            except Exception:
+                                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                             time.sleep(1.5)
                         except Exception:
                             pass
@@ -254,9 +262,21 @@ class SnifferService:
                 for i in range(1, 13):
                     if not self.context.running or not self.context.tab_running_events[tab_index].is_set():
                         break
-                    page.evaluate(f"window.scrollTo(0, {i * 1000})")
+                    try:
+                        page.keyboard.press("PageDown")
+                    except Exception:
+                        try:
+                            page.evaluate(f"window.scrollTo(0, {i * 1000})")
+                        except Exception:
+                            pass
                     time.sleep(0.2)
-                page.evaluate("window.scrollTo(0, 0)")
+                try:
+                    page.keyboard.press("Home")
+                except Exception:
+                    try:
+                        page.evaluate("window.scrollTo(0, 0)")
+                    except Exception:
+                        pass
                 time.sleep(0.5)
             except Exception as e:
                 import traceback
@@ -327,9 +347,15 @@ class SnifferService:
             
         for attempt in range(1, 4):
             try:
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                try:
+                    page.keyboard.press("End")
+                except Exception:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 time.sleep(1.0)
-                page.evaluate("window.scrollTo(0, 0)")
+                try:
+                    page.keyboard.press("Home")
+                except Exception:
+                    page.evaluate("window.scrollTo(0, 0)")
                 time.sleep(1.0)
                 
                 if tab_index in self.context.tab_packet_received_events and self.context.tab_packet_received_events[tab_index].is_set():

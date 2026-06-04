@@ -92,6 +92,17 @@ class UtilsService:
     def __init__(self, context: Optional[IEngineContext] = None):
         self.context = context
 
+    def bring_chrome_to_foreground(self) -> bool:
+        import subprocess
+        ps_cmd = "[void][System.Reflection.Assembly]::LoadWithPartialName('Microsoft.VisualBasic'); [Microsoft.VisualBasic.Interaction]::AppActivate('Google Chrome')"
+        try:
+            print("[*] Activating Google Chrome window via PowerShell to prevent tab suspension...")
+            subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, text=True, check=False)
+            return True
+        except Exception as e:
+            print(f"[-] Failed to activate Chrome window: {e}")
+            return False
+
     def log(self, level: str, message: str):
         msg = {
             "type": level,
@@ -452,7 +463,11 @@ class UtilsService:
         for sel in selectors:
             try:
                 loc = page.locator(sel).first
-                if loc.is_visible() and loc.is_enabled():
+                if loc.count() > 0:
+                    try:
+                        loc.scroll_into_view_if_needed(timeout=2000)
+                    except Exception:
+                        pass
                     loc.click(timeout=3000)
                     return True
             except Exception:
@@ -470,7 +485,11 @@ class UtilsService:
         for sel in selectors:
             try:
                 loc = page.locator(sel).first
-                if loc.is_visible() and loc.is_enabled():
+                if loc.count() > 0:
+                    try:
+                        loc.scroll_into_view_if_needed(timeout=2000)
+                    except Exception:
+                        pass
                     loc.click(timeout=3000)
                     loc.fill(str(page_num))
                     loc.press("Enter")
@@ -487,13 +506,18 @@ class UtilsService:
         for sel in next_selectors:
             try:
                 next_btn = page.locator(sel).first
-                if next_btn.is_visible() and next_btn.is_enabled():
+                if next_btn.count() > 0:
+                    try:
+                        next_btn.scroll_into_view_if_needed(timeout=2000)
+                    except Exception:
+                        pass
                     next_btn.click(timeout=3000)
                     return True
             except Exception:
                 pass
         return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def _recursive_find_creatives(self, obj) -> List[dict]:
         if isinstance(obj, dict):
             has_id = ('id' in obj or 'creative_id' in obj or 'creativeId' in obj or 
@@ -519,6 +543,7 @@ class UtilsService:
             return items
         return []
 
+    # hàm đã hoạt động rồi đừng động vào
     def _parse_creative_item(self, raw_item: dict) -> dict:
         ad_id = str(raw_item.get('id') or raw_item.get('creative_id') or raw_item.get('creativeId') or raw_item.get('creativeIdStr') or raw_item.get('ad_key') or '')
         
