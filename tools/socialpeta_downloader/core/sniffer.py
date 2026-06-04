@@ -62,11 +62,12 @@ class SnifferService:
                 parsed["subfolder"] = self.context.tab_states[tab_index].get("subfolder", "")
                 parsed["subfolder_path"] = self.context.tab_states[tab_index].get("subfolder_path", "")
                 
+                # Check duplication to avoid download queue, but do NOT skip counting and metadata saving
+                is_duplicate = False
                 with self.context.history_lock:
-                    if self.context.utils_service._is_ad_already_downloaded(parsed["ad_id"]):
-                        continue
-                    if self.context.utils_service._is_ad_already_downloading_or_done(parsed["ad_id"]):
-                        continue
+                    if self.context.utils_service._is_ad_already_downloaded(parsed["ad_id"]) or \
+                       self.context.utils_service._is_ad_already_downloading_or_done(parsed["ad_id"]):
+                        is_duplicate = True
                 
                 download_mode = getattr(self.context, "download_mode", "all")
                 if download_mode == "image":
@@ -76,20 +77,20 @@ class SnifferService:
                     if parsed["media_type"] not in ("youtube_video", "youtube_click_required"):
                         continue
                 
-                if parsed["media_type"] == "youtube_click_required":
-                    self.context.utils_service._save_item_state(parsed)
-                    self.context.tab_youtube_queues[tab_index].put(parsed)
-                elif parsed["media_type"] in ("image", "youtube_thumbnail"):
-                    self.context.utils_service._save_item_state(parsed)
-                    new_count += 1
-                    self.context.pending_downloads.put((time.time(), parsed["fpath"]))
-                else: # parsed["media_type"] == "video"
-                    # Defer video CDN downloads: save state but do NOT queue yet
-                    self.context.utils_service._save_item_state(parsed)
+                # Save metadata state for all items (including duplicates)
+                self.context.utils_service._save_item_state(parsed)
+                new_count += 1
+                
+                # Only add to active download queue if it's not a duplicate
+                if not is_duplicate:
+                    if parsed["media_type"] == "youtube_click_required":
+                        self.context.tab_youtube_queues[tab_index].put(parsed)
+                    elif parsed["media_type"] in ("image", "youtube_thumbnail"):
+                        self.context.pending_downloads.put((time.time(), parsed["fpath"]))
                     
             if new_count > 0:
                 self.context.tab_states[tab_index]["scraped_count"] += new_count
-                print(f"[+] Tab {tab_index}: Phat hien va xep hang {new_count} media (anh) moi.")
+                print(f"[+] Tab {tab_index}: Phat hien {new_count} media.")
                 
             self.context.tab_packet_received_events[tab_index].set()
         except Exception as e:
