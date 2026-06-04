@@ -106,46 +106,52 @@ class TabScanner:
             
         return active_tabs
 
+    # hàm đã hoạt động rồi đừng động vào
     def _find_page_by_id(self, context, tab_id: str):
         if not self.context:
             return None
             
-        # 1. Try matching using DevTools targetId via CDPSession
-        for p in context.pages:
-            try:
-                if p.url and is_socialpeta_url(p.url):
-                    try:
-                        client = context.new_cdp_session(p)
-                        target_info = client.send("Target.getTargetInfo")
-                        page_target_id = target_info.get("targetInfo", {}).get("targetId")
-                        if page_target_id == tab_id:
-                            return p
-                    except Exception as cdp_err:
-                        print(f"[-] CDP session failed to get targetId: {cdp_err}")
-            except Exception:
-                continue
-                
-        # 2. Fallback: match by checking window.__tab_id
-        for p in context.pages:
-            try:
-                if p.url and is_socialpeta_url(p.url):
-                    tid = p.evaluate("window.__tab_id")
-                    if tid == tab_id:
+        retries = 10
+        delay = 0.5
+        for attempt in range(retries):
+            # 1. Try matching using DevTools targetId via CDPSession (on all pages)
+            for p in context.pages:
+                try:
+                    client = context.new_cdp_session(p)
+                    target_info = client.send("Target.getTargetInfo")
+                    page_target_id = target_info.get("targetInfo", {}).get("targetId")
+                    if page_target_id == tab_id:
                         return p
-            except Exception:
-                continue
-                
-        # 3. Fallback: match by URL and Title
-        for p in context.pages:
-            try:
-                if p.url and is_socialpeta_url(p.url):
-                    idx = self.context.tab_id_to_index.get(tab_id)
-                    if idx is not None:
-                        state = self.context.tab_states.get(idx)
-                        if state and p.url == state.get("url") and p.title() == state.get("title"):
+                except Exception:
+                    pass
+                    
+            # 2. Fallback: match by checking window.__tab_id (only if page URL is resolved)
+            for p in context.pages:
+                try:
+                    if p.url and is_socialpeta_url(p.url):
+                        p.set_default_timeout(2000)
+                        tid = p.evaluate("window.__tab_id")
+                        if tid == tab_id:
                             return p
-            except Exception:
-                continue
+                except Exception:
+                    continue
+                    
+            # 3. Fallback: match by URL and Title (only if page URL is resolved)
+            for p in context.pages:
+                try:
+                    if p.url and is_socialpeta_url(p.url):
+                        idx = self.context.tab_id_to_index.get(tab_id)
+                        if idx is not None:
+                            state = self.context.tab_states.get(idx)
+                            if state and p.url == state.get("url"):
+                                p.set_default_timeout(2000)
+                                if p.title() == state.get("title"):
+                                    return p
+                except Exception:
+                    continue
+            
+            if attempt < retries - 1:
+                time.sleep(delay)
                 
         return None
 
@@ -344,11 +350,15 @@ class TabScanner:
         
         port_val = port if port is not None else settings.CHROME_DEBUG_PORT
         browser = None
+        
+        # Bring Chrome to foreground to prevent/unfreeze background tab occlusion
+        self.context.utils_service.bring_chrome_to_foreground()
+        
         with sync_playwright() as p:
             try:
                 for attempt in range(1, 4):
                     try:
-                        browser = p.chromium.connect_over_cdp(f"http://localhost:{port_val}", timeout=2000)
+                        browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port_val}", timeout=2000)
                         break
                     except Exception as e:
                         if attempt == 3:
@@ -360,12 +370,31 @@ class TabScanner:
                     self.context.tab_states[tab_index]["status"] = "failed"
                     return
                 context = browser.contexts[0]
+                
+                # Force target synchronization by creating a temp page
+                temp_page = None
+                try:
+                    temp_page = context.new_page()
+                except Exception:
+                    pass
+                    
                 page = self._find_page_by_id(context, tab_id)
+                
+                if temp_page:
+                    try:
+                        temp_page.close()
+                    except Exception:
+                        pass
                 if not page:
                     print(f"[-] Tab {tab_index}: Khong tim thay page voi tab_id={tab_id}")
                     self.context.tab_states[tab_index]["status"] = "closed"
                     return
                     
+                page.set_default_timeout(10000)
+                try:
+                    page.bring_to_front()
+                except Exception:
+                    pass
                 self.context.active_pages[tab_index] = page
                 
                 # Fallback: scrape app name from DOM if regex failed to extract a valid app name

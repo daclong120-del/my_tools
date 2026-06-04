@@ -294,6 +294,20 @@
 - **Fix**: Thêm bộ lọc `platform = item.get("platform", "").lower(); if platform != "youtube": continue` để bỏ qua các item thuộc platform khác.
 - **Files liên quan**: `tools/socialpeta_downloader/core/sniffer.py`
 
+### CDP Target Sync Latency gây thoát luồng cào sớm
+- **Ngày**: 2026-06-04
+- **Vấn đề**: Sau khi kết nối CDP với Chrome, danh sách `context.pages` trong Playwright thường trống rỗng hoặc chưa nạp xong, dẫn đến việc `_find_page_by_id` trả về `None`, hệ thống hiểu nhầm tab bị đóng và tự kết thúc sớm.
+- **Root cause**: Quá trình Playwright đồng bộ hóa các target/pages từ Chrome DevTools diễn ra bất đồng bộ và cần một khoảng trễ nhỏ (< 200ms).
+- **Fix**: Thêm vòng lặp thử lại (retry loop) kéo dài tối đa 5 giây (10 lần thử, mỗi lần nghỉ 0.5s) trong hàm `_find_page_by_id` để đợi Playwright đồng bộ hóa xong danh sách trang.
+- **Files liên quan**: `tools/socialpeta_downloader/core/tab_manager.py`
+
+### CLI nuốt lỗi và báo hoàn thành thành công giả lập
+- **Ngày**: 2026-06-04
+- **Vấn đề**: Khi scraper luồng tab bị đóng hoặc lỗi sớm, CLI kết thúc vòng lặp Live Dashboard, xóa màn hình và in thông báo thành công màu xanh dù thực tế tải 0 tài nguyên.
+- **Root cause**: Khối `finally` của dashboard mặc định in thông báo thành công và dọn dẹp thư mục tạm mà không kiểm tra trạng thái thực tế của tab.
+- **Fix**: Cập nhật CLI để kiểm tra trạng thái cuối cùng của tab. Nếu trạng thái là `closed`, `failed`, hoặc `expired`, hệ thống sẽ in cảnh báo lỗi màu đỏ kèm theo 10 dòng log hoạt động gần nhất để người dùng dễ theo dõi.
+- **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/cli.py`
+
 ---
 
 ## How-To

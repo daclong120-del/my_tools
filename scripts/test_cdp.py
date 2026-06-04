@@ -8,7 +8,7 @@ def test_cdp():
     out_lines.append("[*] Connecting to Chrome via CDP on port 9222...")
     try:
         with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp("http://localhost:9222", timeout=5000)
+            browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222", timeout=5000)
             out_lines.append(f"[+] Connected! Contexts count: {len(browser.contexts)}")
             if not browser.contexts:
                 return

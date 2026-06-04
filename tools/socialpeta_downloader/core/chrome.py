@@ -16,6 +16,7 @@ class ChromeService:
     def __init__(self, context: Optional[IEngineContext] = None):
         self.context = context
 
+    # hàm đã hoạt động rồi đừng động vào
     def ensure_chrome_debug_port(self, port: Optional[int] = None) -> bool:
         """
         Check if port is already open. If not, try to launch a local instance of Google
@@ -24,6 +25,8 @@ class ChromeService:
         port = port if port is not None else settings.CHROME_DEBUG_PORT
             
         if self._is_chrome_cdp_active(port):
+            print(f"[+] Chrome debug port {port} is already active. Reusing existing instance.")
+            print(f"[!] NOTE: If the crawler hangs or fails to download, please close all Chrome processes and run the tool again to let it launch Chrome with optimized background flags.")
             return True
             
         print(f"[*] Chrome debug port {port} is not open. Attempting to launch Chrome...")
@@ -71,6 +74,9 @@ class ChromeService:
             f"--user-data-dir={chrome_profile_dir}",
             "--no-first-run",
             "--no-default-browser-check",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-background-timer-throttling",
             "about:blank"
         ]
         

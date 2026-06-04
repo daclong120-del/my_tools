@@ -18,6 +18,17 @@ import subprocess
 if sys.platform.startswith('win'):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='backslashreplace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='backslashreplace')
+    
+    # Fix Tcl/Tk path for Tkinter inside Virtual Environment (.venv) on Windows
+    if sys.prefix != sys.base_prefix:
+        base_tcl_dir = os.path.join(sys.base_prefix, "tcl")
+        if os.path.exists(base_tcl_dir):
+            tcl_lib = os.path.join(base_tcl_dir, "tcl8.6")
+            tk_lib = os.path.join(base_tcl_dir, "tk8.6")
+            if os.path.exists(tcl_lib):
+                os.environ["TCL_LIBRARY"] = tcl_lib
+            if os.path.exists(tk_lib):
+                os.environ["TK_LIBRARY"] = tk_lib
 
 # Setup import path to allow importing socialpeta_downloader core modules
 parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -39,10 +50,7 @@ from InquirerPy import inquirer
 from InquirerPy.base import Choice
 from InquirerPy.separator import Separator
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
 from rich.live import Live
-from rich.console import Group
 from rich.text import Text
 
 # Use subprocess for folder selection dialog without UI dependencies
@@ -76,6 +84,11 @@ class StdoutRedirector:
 
     def write(self, data):
         if not data: return
+        # If the call is from the main thread (rendering UI), bypass capture
+        if threading.current_thread() is threading.main_thread():
+            self.original_stdout.write(data)
+            return
+
         self.buffer += data
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
@@ -89,7 +102,7 @@ class StdoutRedirector:
                     global_logs.pop(0)
 
     def flush(self):
-        pass
+        self.original_stdout.flush()
 
     def __getattr__(self, name):
         return getattr(self.original_stdout, name)
@@ -111,28 +124,28 @@ def show_banner():
 
 def ask_directory_dialog(initial_dir):
     try:
-        ps_script = f"""
-        Add-Type -AssemblyName System.windows.forms
-        $f = New-Object System.Windows.Forms.FolderBrowserDialog
-        $f.Description = "Chọn thư mục lưu file tải về"
-        $f.ShowNewFolderButton = $true
-        $f.SelectedPath = "{initial_dir}"
-        if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{
-            Write-Output $f.SelectedPath
-        }}
-        """
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_script],
-            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        root = tk.Tk()
+        root.withdraw()  # Hide root window
+        root.wm_attributes("-topmost", 1)  # Focus and bring to front
+        
+        path = filedialog.askdirectory(
+            parent=root,
+            title="Chọn thư mục lưu file tải về",
+            initialdir=initial_dir
         )
-        path = result.stdout.strip()
+        root.destroy()
+        
         if path:
-            return path
+            return os.path.abspath(path)
         return initial_dir
     except Exception as e:
-        print(f"\n[-] Không thể mở Folder Explorer ({e}).")
+        print(f"\n[-] Không thể mở Tkinter Folder Explorer ({e}).")
         ans = input(f"Nhập đường dẫn thư mục thủ công (Mặc định: {initial_dir}): ").strip()
         return ans if ans else initial_dir
+
 
 
 def clean_temp_dirs(core):
@@ -147,123 +160,90 @@ def clean_temp_dirs(core):
 
 
 def make_dashboard(core, tab_index):
+    import psutil
     tab_state = core.tab_states.get(tab_index, {})
     core_stats = core.stats
 
-    # 1. Info Panel
-    info_text = Text()
-    info_text.append("Thư mục lưu: ", style="bold white")
-    info_text.append(f"{AppState.download_dir}\n", style="cyan")
-    info_text.append("Số luồng tải: ", style="bold white")
-    info_text.append(f"{AppState.thread_count}  |  ", style="cyan")
-    info_text.append("Chrome Debug Port: ", style="bold white")
-    info_text.append(f"{AppState.chrome_port}\n", style="cyan")
-    info_text.append("Chế độ tải: ", style="bold white")
+    # 1. Gather system resource metrics
+    cpu = core.sys_monitor.cpu_usage
+    try:
+        ram_used_gb = psutil.virtual_memory().used / (1024 ** 3)
+    except Exception:
+        ram_used_gb = 0.0
 
-    mode_map = {
-        "all": "Tải tất cả các loại (CDN Video + Youtube Video + Ảnh)",
-        "image": "Chỉ tải ảnh",
-        "youtube": "Chỉ tải video YouTube"
-    }
-    mode_text = mode_map.get(core.download_mode, "Tải tất cả")
-    info_text.append(f"{mode_text}\n", style="green")
-    info_text.append("Phím tắt: ", style="bold white")
-    info_text.append("Nhấn ", style="yellow")
-    info_text.append("Ctrl + Q", style="bold yellow")
-    info_text.append(" để DỪNG AN TOÀN tiến trình cào tải", style="yellow")
+    try:
+        total, used, free = shutil.disk_usage(core.download_dir)
+        free_gb = free / (1024 ** 3)
+        disk_status = f"OK ({free_gb:.0f} GB free)" if free_gb >= 1.0 else f"LOW ({free_gb:.2f} GB free)"
+    except Exception:
+        disk_status = "OK"
 
-    info_panel = Panel(info_text, title="[bold cyan]THÔNG TIN HỆ THỐNG[/]", border_style="cyan")
+    active_threads = core_stats.get('downloading', 0)
+    total_threads = AppState.thread_count
 
-    # 2. Tab Scraper Panel
-    tab_text = Text()
-    tab_title = tab_state.get("title", "SocialPeta Page")
-    if len(tab_title) > 60:
-        tab_title = tab_title[:57] + "..."
-    tab_text.append("Đang cào Tab: ", style="bold white")
-    tab_text.append(f"#{tab_index} - {tab_title}\n", style="magenta")
+    sys_line = f"[HỆ THỐNG] Threads: {active_threads}/{total_threads} active | CPU: {cpu:.1f}% | RAM: {ram_used_gb:.1f} GB | Disk: {disk_status}"
+    
+    # 2. Gather download stats
+    total_sniffed = core_stats.get('total_sniffed', 0)
+    pending = core_stats.get('pending', 0)
+    downloading = core_stats.get('downloading', 0)
+    done = core_stats.get('done', 0)
+    duplicate = core_stats.get('duplicate', 0)
+    failed = core_stats.get('failed', 0) + core_stats.get('expired', 0)
+    
+    stats_line = f"[THỐNG KÊ] Tổng sniff: {total_sniffed} | Chờ: {pending} | Đang tải: {downloading} | Xong: {done} | Trùng: {duplicate} | Lỗi: {failed}"
 
-    status_raw = tab_state.get("status", "unknown")
-    status_style = "green" if status_raw == "running" else "cyan" if status_raw == "done" else "red"
-    tab_text.append("Trạng thái cào: ", style="bold white")
-    tab_text.append(f"{status_raw.upper()}\n", style=status_style)
+    # 3. Construct minimal styled text layout
+    dashboard_text = Text()
+    dashboard_text.append("[+] Bắt đầu tiến trình cào và tải...\n", style="bold green")
+    dashboard_text.append("---------------------------------------------------------------------------------\n", style="dim white")
+    dashboard_text.append(f"{sys_line}\n", style="cyan")
+    dashboard_text.append(f"{stats_line}\n", style="magenta")
+    dashboard_text.append("---------------------------------------------------------------------------------\n\n", style="dim white")
 
-    current_page = tab_state.get("current_page", 1)
-    target_pages = tab_state.get("target_pages", 0)
-    tab_text.append("Tiến trình: ", style="bold white")
-    tab_text.append(f"Trang {current_page} / {target_pages}\n", style="yellow")
-
-    scraped_count = tab_state.get("scraped_count", 0)
-    tab_text.append("Đã phát hiện từ tab: ", style="bold white")
-    tab_text.append(f"{scraped_count} ads\n", style="green")
-
-    tab_panel = Panel(tab_text, title="[bold magenta]TIẾN TRÌNH CÀO (SCRAPER)[/]", border_style="magenta")
-
-    # 3. Stats Table
-    table = Table(show_header=True, header_style="bold blue", expand=True)
-    table.add_column("Chỉ số", style="bold")
-    table.add_column("Số lượng", justify="right")
-    table.add_column("Mô tả chi tiết", style="dim")
-
-    table.add_row("Tổng số ad sniffed", f"[bold cyan]{core_stats.get('total_sniffed', 0)}[/]", "Tổng quảng cáo phát hiện từ API")
-    table.add_row("Đang chờ tải (Pending)", f"[bold yellow]{core_stats.get('pending', 0)}[/]", "Hàng đợi đang chờ tải xuống")
-    table.add_row("Đang tải (Downloading)", f"[bold magenta]{core_stats.get('downloading', 0)}[/]", "Đang tải đồng thời thực tế")
-    table.add_row("Thành công (Done)", f"[bold green]{core_stats.get('done', 0)}[/]", "Đã tải và lưu thành công")
-    table.add_row("Lỗi tải (Failed)", f"[bold red]{core_stats.get('failed', 0)}[/]", "Lỗi kết nối CDN/Youtube")
-    table.add_row("Link CDN hết hạn", f"[bold yellow]{core_stats.get('expired', 0)}[/]", "Link CDN bị quá hạn 403")
-    table.add_row("Lọc trùng (Duplicate)", f"[bold magenta]{core_stats.get('duplicate', 0)}[/]", "Phát hiện trùng lặp vân tay video")
-
-    stats_panel = Panel(table, title="[bold blue]THỐNG KÊ TIẾN TRÌNH TẢI[/]", border_style="blue")
-
-    # 4. Logs Panel
-    log_text = Text()
-    if not global_logs:
-        log_text.append("Đang chờ dữ liệu...\n", style="dim")
-    else:
-        for log_line in global_logs:
-            lower_line = log_line.lower()
-            if "[error]" in lower_line or "[-] " in log_line or "fail" in lower_line or "loi" in lower_line:
-                log_text.append(f"{log_line}\n", style="red")
-            elif "[warning]" in lower_line or "[!]" in log_line:
-                log_text.append(f"{log_line}\n", style="yellow")
-            elif "[+]" in log_line or "thanh cong" in lower_line or "done" in lower_line:
-                log_text.append(f"{log_line}\n", style="green")
-            else:
-                log_text.append(f"{log_line}\n", style="white")
-
-    logs_panel = Panel(log_text, title="[bold green]NHẬT KÝ HOẠT ĐỘNG (LOGS)[/]", border_style="green")
-
-    # 5. Progress Panel
-    progress_text = Text()
+    # 4. Active downloads progress section
+    dashboard_text.append("[ĐANG TẢI VIDEO]\n", style="bold yellow")
     if hasattr(core, "download_progress") and core.download_progress:
-        active_downloads = {k: v for k, v in core.download_progress.items() if v.get('status') == 'downloading' or v.get('status') == 'processing'}
+        active_downloads = {k: v for k, v in core.download_progress.items() if v.get('status') in ('downloading', 'processing')}
         if not active_downloads:
-            progress_text.append("Không có tiến trình tải nào đang diễn ra...\n", style="dim")
+            dashboard_text.append("- Không có tiến trình tải nào đang diễn ra...\n", style="dim white")
         else:
-            for ad_id, info in active_downloads.items():
+            for ad_id, info in sorted(active_downloads.items()):
                 p = info.get('percent', 0.0)
                 status = info.get('status')
                 filled = int((p / 100.0) * 20)
                 bar = "▓" * filled + "░" * (20 - filled)
                 speed = info.get('speed', '0 MB/s')
                 dl_type = info.get('type', 'Unknown')
-                progress_text.append(f"- Ad #{ad_id}: ", style="bold white")
-                progress_text.append(f"{bar} {p:5.1f}% ", style="cyan")
+                
+                dashboard_text.append(f"- Ad #{ad_id}: ", style="bold white")
+                dashboard_text.append(f"{bar} {p:5.1f}% ", style="cyan")
                 if status == 'processing':
-                    progress_text.append(f"[Đang xử lý/Lọc trùng...]\n", style="yellow")
+                    dashboard_text.append("[Đang xử lý/Lọc trùng...]\n", style="yellow")
                 else:
-                    progress_text.append(f"[Tải {dl_type}: {speed}]\n", style="dim white")
+                    dashboard_text.append(f"[Tải {dl_type}: {speed}]\n", style="dim white")
     else:
-        progress_text.append("Không có tiến trình tải nào đang diễn ra...\n", style="dim")
-        
-    progress_panel = Panel(progress_text, title="[bold cyan]ĐANG TẢI VIDEO[/]", border_style="cyan")
+        dashboard_text.append("- Không có tiến trình tải nào đang diễn ra...\n", style="dim white")
 
-    return Group(
-        info_panel,
-        tab_panel,
-        stats_panel,
-        progress_panel,
-        logs_panel
-    )
+    dashboard_text.append("\n")
+
+    # 5. Active logs section
+    dashboard_text.append("[NHẬT KÝ HOẠT ĐỘNG (LOGS)]\n", style="bold green")
+    if not global_logs:
+        dashboard_text.append("Đang chờ dữ liệu...\n", style="dim white")
+    else:
+        for log_line in global_logs:
+            lower_line = log_line.lower()
+            if "[error]" in lower_line or "[-] " in log_line or "fail" in lower_line or "loi" in lower_line:
+                dashboard_text.append(f"{log_line}\n", style="red")
+            elif "[warning]" in lower_line or "[!]" in log_line or "[warn]" in lower_line:
+                dashboard_text.append(f"{log_line}\n", style="yellow")
+            elif "[+]" in log_line or "thanh cong" in lower_line or "done" in lower_line or "success" in lower_line:
+                dashboard_text.append(f"{log_line}\n", style="green")
+            else:
+                dashboard_text.append(f"{log_line}\n", style="white")
+
+    return dashboard_text
 
 
 def ensure_chrome_connected(core):
@@ -488,7 +468,8 @@ def main_menu():
             sys.stdout = redirector
 
             try:
-                with Live(auto_refresh=False, console=console) as live:
+                live_console = Console(file=original_stdout)
+                with Live(auto_refresh=False, console=live_console) as live:
                     while True:
                         tab_state = core.tab_states.get(selected_tab, {})
                         tab_status = tab_state.get("status", "unknown")
@@ -535,12 +516,23 @@ def main_menu():
 
             # Stop & Cleanup
             console.clear()
+            tab_state = core.tab_states.get(selected_tab, {})
+            tab_status = tab_state.get("status", "unknown")
+
             if aborted:
                 print(f"\n{YELLOW}[*] Đang dừng tiến trình cào tải an toàn và dọn dẹp thư mục tạm...{RESET}")
                 core.stop_system()
                 clean_temp_dirs(core)
                 print(f"{GREEN}[+] Đã dọn dẹp thư mục tạm thành công.{RESET}")
                 time.sleep(2)
+            elif tab_status in ("closed", "failed", "expired"):
+                print(f"\n{RED}[-] Quá trình cào tải thất bại hoặc tab đã bị đóng (Trạng thái: {tab_status})!{RESET}")
+                print(f"{YELLOW}[*] Xem lại các log hoạt động cuối cùng của phiên chạy:{RESET}")
+                for log_line in global_logs:
+                    print(log_line)
+                core.stop_system()
+                clean_temp_dirs(core)
+                input("\nNhấn Enter để quay lại Menu chính...")
             else:
                 print(f"\n{GREEN}[+] Đã hoàn thành cào tải và lưu trữ thành công!{RESET}")
                 core.stop_system()

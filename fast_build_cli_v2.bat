@@ -27,7 +27,7 @@ if exist "build\fast_build_cli_V2_socialpetaDownloader" (
 echo ===================================================
 echo [2/4] Bat dau bien dich bang Nuitka 10 luong (Vui long doi)...
 echo ===================================================
-.venv\Scripts\python.exe -m nuitka --standalone --playwright-include-browser=none --include-package-data=pyfiglet --include-package=socialpeta_downloader --jobs=10 --nofollow-import-to=yt_dlp.extractor.lazy_extractors --output-dir=build --output-filename=SocialPetaDownloader tools\socialpeta_downloader\cli\cli_v2\cli.py
+.venv\Scripts\python.exe -m nuitka --standalone --enable-plugin=tk-inter --playwright-include-browser=none --include-package-data=pyfiglet --include-package=socialpeta_downloader --jobs=10 --nofollow-import-to=yt_dlp.extractor.lazy_extractors --output-dir=build --output-filename=SocialPetaDownloader tools\socialpeta_downloader\cli\cli_v2\cli.py
 
 if %ERRORLEVEL% NEQ 0 (
     echo [LOI] Qua trinh bien dich bang Nuitka that bai!
