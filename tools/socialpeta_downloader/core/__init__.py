@@ -140,7 +140,7 @@ class SocialPetaDownloaderCore:
             conn.close()
         return results
 
-    def __init__(self):
+    def __init__(self, skip_db_init: bool = False):
         self.session_dir = settings.SESSION_DIR
         self.download_mode = "all"
         self.quiet_mode = False
@@ -232,11 +232,13 @@ class SocialPetaDownloaderCore:
         self.session_service = SessionService(self)
 
         # Initialize SQLite database and migrate old CSV/JSON files
-        self.session_service.init_db()
-        self.session_service.migrate_old_data()
+        if not skip_db_init:
+            self.session_service.init_db()
+            self.session_service.migrate_old_data()
 
-        # Initialize Image MD5 Cache
-        self.deduplication_service._init_image_md5_cache()
+            # Initialize Image MD5 Cache
+            self.deduplication_service._init_image_md5_cache()
+
 
     # Delegation methods to satisfy IEngineContext protocol
     def log(self, level: str, message: str) -> None:
@@ -324,6 +326,13 @@ class SocialPetaDownloaderCore:
         Ghi thêm một bản ghi quảng cáo vào file CSV tùy chỉnh (ủy quyền qua SessionService).
         """
         self.session_service.append_to_custom_csv(filepath, item)
+
+    def clear_session_data(self, clear_history: bool = True) -> None:
+        """
+        Dọn dẹp cơ sở dữ liệu SQLite, xóa file JSON tạm thời và thư mục tải tạm.
+        """
+        self.session_service.clear_session_data(clear_history)
+
 
 
 

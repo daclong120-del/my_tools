@@ -688,3 +688,103 @@ class SessionService:
                 import traceback
                 self.context.log("error", f"[-] Error writing to custom CSV: {e}\n{traceback.format_exc()}")
 
+    def clear_session_data(self, clear_history: bool = True):
+        """
+        Dọn dẹp cơ sở dữ liệu SQLite, xóa file JSON tạm thời và thư mục tải tạm.
+        Nếu clear_history = True: xóa trắng lịch sử CSV, ngược lại chỉ làm sạch SQLite/temp files.
+        """
+        if not self.context:
+            return
+            
+        import sqlite3
+        import shutil
+        
+        db_path = self.context.get_db_path()
+        
+        # 1. Truncate SQLite tables
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path, timeout=10.0)
+            try:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("DELETE FROM ad_metadata;")
+                conn.execute("DELETE FROM duplicate_audit;")
+                if clear_history:
+                    conn.execute("DELETE FROM download_history;")
+                conn.commit()
+                conn.execute("VACUUM;")
+                print("[+] SQLite tables cleared and database vacuumed.")
+            except Exception as e:
+                import traceback
+                self.context.log("error", f"[-] Error clearing SQLite tables: {e}\n{traceback.format_exc()}")
+            finally:
+                conn.close()
+                
+        # 2. Clear temp JSON directory (.temp/)
+        temp_queue_dir = self.context.temp_queue_dir
+        if os.path.exists(temp_queue_dir):
+            try:
+                for item in os.listdir(temp_queue_dir):
+                    item_path = os.path.join(temp_queue_dir, item)
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                    else:
+                        os.remove(item_path)
+                print("[+] Temp queue files (.temp/) removed.")
+            except Exception as e:
+                self.context.log("warning", f"[-] Error clearing temp queue directory: {e}")
+                
+        # 3. Clear temp downloads (.temp_download/)
+        temp_download_dir = self.context.temp_download_dir
+        if os.path.exists(temp_download_dir):
+            try:
+                for item in os.listdir(temp_download_dir):
+                    item_path = os.path.join(temp_download_dir, item)
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                    else:
+                        os.remove(item_path)
+                print("[+] Temp download files (.temp_download/) removed.")
+            except Exception as e:
+                self.context.log("warning", f"[-] Error clearing temp download directory: {e}")
+                
+        # 4. Truncate CSV files if needed
+        if clear_history:
+            csv_path = self.context.csv_path
+            if os.path.exists(csv_path):
+                try:
+                    fieldnames = ["ad_id", "video_name", "media_type", "video_url", "youtube_url",
+                                  "duration", "impression", "heat", "platform", "download_time",
+                                  "publisher", "app_name", "area", "copywriting_language", "title",
+                                  "body", "deployment_time", "saved_path", "file_size"]
+                    with open(csv_path, 'w', encoding='utf-8-sig', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(fieldnames)
+                    print(f"[+] download_info.csv truncated: {csv_path}")
+                except Exception as e:
+                    self.context.log("warning", f"[-] Error truncating download_info.csv: {e}")
+                    
+        # Always clear/reset duplicate_audit.csv
+        audit_csv_path = self.context.audit_csv_path
+        if os.path.exists(audit_csv_path):
+            try:
+                fieldnames = ["timestamp", "ad_id", "app_name", "duplicate_ad_id", "reason"]
+                with open(audit_csv_path, 'w', encoding='utf-8-sig', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(fieldnames)
+                print(f"[+] duplicate_audit.csv truncated: {audit_csv_path}")
+            except Exception as e:
+                self.context.log("warning", f"[-] Error truncating duplicate_audit.csv: {e}")
+                
+        # Reset memory caches in context if available
+        if hasattr(self.context, "image_md5_cache") and isinstance(self.context.image_md5_cache, dict):
+            self.context.image_md5_cache.clear()
+        if hasattr(self.context, "item_status_cache") and isinstance(self.context.item_status_cache, dict):
+            self.context.item_status_cache.clear()
+        if hasattr(self.context, "ad_id_to_status") and isinstance(self.context.ad_id_to_status, dict):
+            self.context.ad_id_to_status.clear()
+        if hasattr(self.context, "stats") and isinstance(self.context.stats, dict):
+            with self.context.stats_lock:
+                for k in self.context.stats:
+                    self.context.stats[k] = 0
+
+

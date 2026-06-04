@@ -8,7 +8,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 sys.path.append(parent_dir)
 
 from socialpeta_downloader.core import SocialPetaDownloaderCore
-from socialpeta_downloader.scripts.page_navigation import navigate_to_page
+from socialpeta_downloader.test.page_navigation import navigate_to_page
 
 def main():
     core = SocialPetaDownloaderCore()
