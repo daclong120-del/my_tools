@@ -814,3 +814,175 @@ class YoutubeService:
             
         return results
 
+
+    def custom_click_and_extract_youtube_from_page(self, page) -> list:
+        """
+        Quét giao diện, click vào nút Chi tiết (Detail) của từng card có icon YouTube để mở modal, 
+        trích xuất đường dẫn YouTube, trích xuất ad_id thực tế từ modal, và đóng modal.
+        """
+        results = []
+        # 1. Cuộn trang xuống để load hết các card trên giao diện trước
+        print("[*] Đang cuộn trang để tải đầy đủ các card quảng cáo...")
+        try:
+            for i in range(1, 6):
+                page.evaluate(f"window.scrollTo(0, {i * 2000})")
+                time.sleep(0.08)
+            page.evaluate("window.scrollTo(0, 0)")
+            time.sleep(0.1)
+        except Exception:
+            pass
+            
+        print("[*] Bắt đầu quét và click vào từng card có icon YouTube...")
+        
+        while True:
+            # Tìm và click vào card chưa xử lý kế tiếp
+            clicked = page.evaluate("""() => {
+                const card = Array.from(document.querySelectorAll('.creative-card-item, .shadow-common-light, [class*="creative-card"]'))
+                    .find(c => {
+                        const hasYoutube = !!c.querySelector('.net-icon-youtube') || 
+                                           !!c.querySelector('[class*="net-icon-youtube"]') ||
+                                           !!c.querySelector('[class*="-youtube"]');
+                        return hasYoutube && !c.hasAttribute('data-youtube-processed');
+                    });
+                if (card) {
+                    card.setAttribute('data-youtube-processed', 'true');
+                    card.scrollIntoView({behavior: 'instant', block: 'center'});
+                    
+                    const cardText = card.innerText || card.textContent || "";
+                    const idMatch = cardText.match(/ID:\\s*(\\d+)/) || cardText.match(/(\\d{9,18})/);
+                    const adId = idMatch ? idMatch[1] : "";
+                    
+                    let appName = "";
+                    const appEl = card.querySelector('.app-name, [class*="app-name"], .name, [class*="name"]');
+                    if (appEl) {
+                        appName = appEl.innerText || appEl.textContent || "";
+                    } else {
+                        const lines = cardText.split('\\n').map(l => l.trim()).filter(Boolean);
+                        if (lines.length > 0) appName = lines[0];
+                    }
+                    
+                    const btn = Array.from(card.querySelectorAll('button, a, [class*="btn"], [class*="detail"]'))
+                        .find(el => {
+                            const text = el.textContent || el.innerText || "";
+                            return text.includes("详情") || text.toLowerCase().includes("detail") || text.includes("Chi tiết");
+                        }) || card.querySelector('button, [class*="btn"], [class*="detail"], a') || card;
+                    
+                    if (btn.tagName && btn.tagName.toLowerCase() === 'a' && btn.hasAttribute('href')) {
+                        const hrefVal = btn.getAttribute('href');
+                        if (hrefVal && !hrefVal.includes('javascript') && !hrefVal.startsWith('#')) {
+                            btn.removeAttribute('href');
+                        }
+                    }
+                    btn.click();
+                    return { success: true, adId: adId, appName: appName.trim(), cardText: cardText };
+                }
+                return { success: false };
+            }""")
+            
+            if not clicked.get("success"):
+                # Không còn card nào có icon YouTube chưa được xử lý
+                break
+                
+            ad_id = clicked.get("adId", "")
+            app_name = clicked.get("appName", "")
+            print(f"[*] Đã click mở modal của card YouTube (ID: {ad_id}, App: {app_name}). Đang tìm link YouTube...")
+            
+            # Đợi modal xuất hiện và load link YouTube
+            found_url = ""
+            for poll in range(25):  # 25 * 80ms = 2s max wait
+                # 1. Tìm thẻ <a> có link youtube
+                a_loc = page.locator("a[href*='youtube.com'], a[href*='youtu.be'], a[href*='youtube-nocookie.com']").first
+                if a_loc.is_visible():
+                    href = a_loc.get_attribute("href")
+                    if href:
+                        found_url = href.strip()
+                        break
+                # 2. Tìm thẻ <iframe> có src youtube
+                iframe_loc = page.locator("iframe[src*='youtube.com'], iframe[src*='youtu.be'], iframe[src*='youtube-nocookie.com']").first
+                if iframe_loc.is_visible():
+                    src = iframe_loc.get_attribute("src")
+                    if src:
+                        found_url = src.strip()
+                        break
+                time.sleep(0.08)
+                
+            if not found_url:
+                # Tìm trong body text của modal làm phương án dự phòng
+                try:
+                    body_text = page.locator("body").inner_text()
+                    urls = re.findall(r'https?://[^\\s<>"]*?(?:youtu|youtube-nocookie)[^\\s<>"]*', body_text)
+                    if urls:
+                        found_url = urls[0].strip()
+                except Exception:
+                    pass
+            
+            # Đọc title/body từ modal
+            title = ""
+            body = ""
+            try:
+                modal_el = page.locator(".el-dialog, .modal, [class*='dialog'], [class*='modal']").first
+                if modal_el.is_visible():
+                    modal_text = modal_el.inner_text()
+                    lines = [l.strip() for l in modal_text.split("\n") if l.strip()]
+                    if lines:
+                        body = "\n".join(lines[:3])
+            except Exception:
+                pass
+ 
+            # Trích xuất ad_id thực tế từ modal (đường dẫn Open in Single Page)
+            if not ad_id:
+                try:
+                    detail_id = page.evaluate("""() => {
+                        const link = Array.from(document.querySelectorAll("a[href*='detail?'], a[href*='/detail']"))
+                            .find(a => a.href && a.href.includes('id='));
+                        if (link) {
+                            const match = link.href.match(/[?&]id=([^&]+)/);
+                            return match ? match[1] : "";
+                        }
+                        return "";
+                    }""")
+                    if detail_id:
+                        ad_id = detail_id
+                        print(f"[*] Trích xuất ad_id dự phòng từ modal: {ad_id}")
+                except Exception as e:
+                    print(f"[*] Lỗi trích xuất ad_id dự phòng: {e}")
+ 
+            youtube_url = ""
+            if found_url:
+                vid_match = re.search(r'v=([a-zA-Z0-9_-]{11})', found_url) or \
+                            re.search(r'embed/([a-zA-Z0-9_-]{11})', found_url) or \
+                            re.search(r'youtu\.be/([a-zA-Z0-9_-]{11})', found_url)
+                if vid_match:
+                    vid = vid_match.group(1)
+                    youtube_url = f"https://www.youtube.com/watch?v={vid}"
+                else:
+                    youtube_url = found_url
+                print(f"[+] Tìm thấy link YouTube: {youtube_url}")
+                results.append({
+                    "ad_id": ad_id,
+                    "app_name": app_name,
+                    "youtube_url": youtube_url,
+                    "title": title,
+                    "body": body
+                })
+            else:
+                print("[-] Không tìm thấy link YouTube cho card này.")
+                
+            # Đóng modal (ấn Escape)
+            try:
+                page.keyboard.press("Escape")
+                time.sleep(0.2)
+            except Exception:
+                pass
+                
+        # Xóa các attribute tạm để không ảnh hưởng đến các lần quét sau
+        try:
+            page.evaluate("""() => {
+                document.querySelectorAll('[data-youtube-processed]').forEach(el => {
+                    el.removeAttribute('data-youtube-processed');
+                });
+            }""")
+        except Exception:
+            pass
+            
+        return results

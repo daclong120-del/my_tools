@@ -320,6 +320,8 @@ class SocialPetaDownloaderCore:
     def connect_to_active_tab(self, playwright, port: int = 9222):
         return self.tab_scanner.connect_to_active_tab(playwright, port)
 
+    def custom_click_and_extract_youtube_from_page(self, page) -> list:
+        return self.youtube_service.custom_click_and_extract_youtube_from_page(page)
 
     def append_to_custom_csv(self, filepath: str, item: dict) -> None:
         """

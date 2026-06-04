@@ -412,3 +412,8 @@
 - **Ngày**: 2026-06-03
 - **Chi tiết**: Mẫu thiết kế để xử lý quảng cáo hỗ trợ nhiều nguồn đa phương tiện khác nhau (ví dụ: liên kết CDN tải trực tiếp và liên kết YouTube chính chủ). Ta thực hiện phân loại và đưa nguồn có độ ưu tiên cao nhất (YouTube) vào xử lý trước bằng hàng đợi. Đồng thời, khi bắt được các nguồn có độ ưu tiên thấp hơn (CDN) trong quá trình cào, ta không ghi đè trực tiếp để tránh mất dữ liệu nguồn chính, mà lưu tạm thông tin CDN vào một thư mục đệm. Khi luồng cào của tab kết thúc, ta thực hiện quét dọn thư mục đệm này và chỉ xếp hàng tải các CDN dự phòng nếu nguồn ưu tiên chính (YouTube) bị trích xuất thất bại.
 - **Files liên quan**: `tools/socialpeta_downloader/core/sniffer.py`, `tools/socialpeta_downloader/core/tab_manager.py`
+
+### Direct-to-CSV Extraction bypassing SQLite (Trích xuất trực tiếp ra CSV bỏ qua SQLite)
+- **Ngày**: 2026-06-04
+- **Chi tiết**: Đối với các tiến trình cào chỉ thu thập dữ liệu thô (ví dụ: cào link YouTube ra CSV cục bộ) và không muốn lưu trữ vào SQLite DB hoặc sinh ra các file nhật ký phụ (`duplicate_audit.csv`, `download_info.csv` của Core), ta khởi tạo Core bằng cách truyền đối số `skip_db_init=True` và tránh gọi phương thức `core.update_download_dir()` (vì phương thức này sẽ tự động khởi động kết nối SQLite). Dữ liệu sau khi trích xuất từ trang web sẽ được lưu trực tiếp vào tệp CSV đích thông qua module `csv` chuẩn của Python.
+- **Files liên quan**: `tools/socialpeta_downloader/test/scrape_youtube_to_csv.py`, `tools/socialpeta_downloader/core/__init__.py`
