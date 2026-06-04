@@ -13,12 +13,17 @@ from typing import Optional
 from socialpeta_downloader.core.protocols import IEngineContext
 
 class YoutubeService:
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, context: Optional[IEngineContext] = None):
+        """
+        Khởi tạo dịch vụ trích xuất YouTube URL từ chi tiết quảng cáo.
+        """
         self.context = context
 
+    # hàm đã hoạt động rồi đừng động vào
     def _youtube_extract_worker(self):
         """
-        Runs on Stream 1 Playwright thread to execute UC-03 click flow safely
+        Tiến trình chạy trên luồng Playwright để thực hiện quy trình click tìm URL YouTube từ modal chi tiết.
         """
         if not self.context:
             return
@@ -338,9 +343,10 @@ class YoutubeService:
                 item["status"] = "failed"
                 self.context.utils_service._save_item_state(item)
 
+    # hàm đã hoạt động rồi đừng động vào
     def _youtube_extract_worker_for_tab(self, tab_index: int, page):
         """
-        Processes YouTube iframe extraction for this specific tab page.
+        Thực hiện trích xuất URL iframe YouTube cho một tab cụ thể.
         """
         if not self.context:
             return

@@ -16,13 +16,18 @@ from socialpeta_downloader.core.utils import is_socialpeta_url
 from socialpeta_downloader.core.protocols import IEngineContext
 
 class TabScanner:
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, context: Optional[IEngineContext] = None):
+        """
+        Khởi tạo đối tượng TabScanner để quét và quản lý các tab.
+        """
         self.context = context
 
+    # hàm đã hoạt động rồi đừng động vào
     def detect_tabs(self, port: Optional[int] = None) -> list:
         """
-        Connects to Chrome debug port via HTTP DevTools protocol, detects all SocialPeta tabs,
-        and returns a list of active tabs. Fast, lightweight, and prevents CDP session leaks.
+        Kết nối tới cổng debug của Chrome qua giao thức HTTP DevTools, phát hiện tất cả các tab SocialPeta đang hoạt động
+        và trả về danh sách các tab. Nhanh, nhẹ và ngăn rò rỉ phiên CDP.
         """
         if not self.context:
             return []
@@ -108,6 +113,9 @@ class TabScanner:
 
     # hàm đã hoạt động rồi đừng động vào
     def _find_page_by_id(self, context, tab_id: str):
+        """
+        Tìm đối tượng trang (page) bằng tab_id thông qua các cơ chế so khớp CDP targetId, window.__tab_id, hoặc URL & Title.
+        """
         if not self.context:
             return None
             
@@ -155,9 +163,10 @@ class TabScanner:
                 
         return None
 
+    # hàm đã hoạt động rồi đừng động vào
     def _scrape_app_name_from_dom(self, page) -> Optional[str]:
         """
-        Attempts to scrape the app name or advertiser name directly from the DOM of the SocialPeta page.
+        Cố gắng trích xuất trực tiếp tên ứng dụng hoặc nhà quảng cáo từ DOM của trang SocialPeta.
         """
         from urllib.parse import urlparse, parse_qs
         try:
@@ -260,7 +269,11 @@ class TabScanner:
                 self.context.log("error", f"[-] Error scraping app name from DOM: {e}\n{traceback.format_exc()}")
         return None
 
+    # hàm đã hoạt động rồi đừng động vào
     def run_tab_scraper(self, tab_index: int, total_pages: int, port: Optional[int] = None):
+        """
+        Chạy tiến trình cào dữ liệu cho một tab cụ thể, kết nối Playwright qua CDP và điều phối việc phân trang.
+        """
         if not self.context:
             return
             

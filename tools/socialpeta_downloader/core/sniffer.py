@@ -14,23 +14,37 @@ from typing import Optional, Dict, Any, List
 from socialpeta_downloader.core.protocols import IEngineContext
 
 class SnifferService:
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, context: Optional[IEngineContext] = None):
+        """
+        Khởi tạo dịch vụ phân tích gói tin mạng (Sniffer Service).
+        """
         self.context = context
 
     # hàm đã hoạt động rồi đừng động vào
     def _recursive_find_creatives(self, obj) -> List[dict]:
+        """
+        Tìm kiếm đệ quy các đối tượng creative quảng cáo từ JSON phản hồi API.
+        """
         if self.context and self.context.utils_service:
             return self.context.utils_service._recursive_find_creatives(obj)
         return []
 
     # hàm đã hoạt động rồi đừng động vào
     def _parse_creative_item(self, raw_item: dict) -> dict:
+        """
+        Phân tích cú pháp dữ liệu quảng cáo thô thu được từ API thành cấu trúc chuẩn.
+        """
         if self.context and self.context.utils_service:
             return self.context.utils_service._parse_creative_item(raw_item)
         return {}
 
 
+    # hàm đã hoạt động rồi đừng động vào
     def _process_api_response_for_tab(self, tab_index: int, data: dict):
+        """
+        Xử lý phản hồi API của tab, lọc trùng lặp và phân bổ các quảng cáo vào hàng đợi tải phù hợp.
+        """
         if not self.context:
             return
             
@@ -101,7 +115,11 @@ class SnifferService:
                 print(f"[-] Tab {tab_index} Sniffer error parsing creative list: {e}\n{traceback.format_exc()}")
             self.context.tab_packet_received_events[tab_index].set()
 
+    # hàm đã hoạt động rồi đừng động vào
     def run_tab_pagination_loop(self, tab_index: int, page, total_pages: int):
+        """
+        Thực hiện vòng lặp tự động chuyển trang và cào dữ liệu cho một tab cụ thể.
+        """
         if not self.context:
             return
             
@@ -333,7 +351,11 @@ class SnifferService:
             
         print(f"[+] Tab {tab_index}: Hoan thanh quy trinh Pagination Sniffing.")
 
+    # hàm đã hoạt động rồi đừng động vào
     def soft_trigger(self, tab_index: int) -> bool:
+        """
+        Kích hoạt mềm bằng cách cuộn trang hoặc click nút Tìm kiếm để ép buộc tải dữ liệu khi trang bị treo/timeout.
+        """
         if not self.context:
             return False
             
@@ -394,7 +416,11 @@ class SnifferService:
         print(f"[!] CANH BAO: Soft Trigger Tab {tab_index} that bai sau 3 lan thu.")
         return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def _upgrade_youtube_items_via_dom(self, tab_index: int, page):
+        """
+        Quét giao diện DOM để phát hiện icon YouTube trên các card quảng cáo và nâng cấp loại media lên youtube_click_required.
+        """
         if not self.context:
             return
             

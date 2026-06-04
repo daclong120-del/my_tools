@@ -16,39 +16,70 @@ from typing import Any, Optional
 from socialpeta_downloader.config import settings
 from socialpeta_downloader.core.protocols import IEngineContext
 
+# hàm đã hoạt động rồi đừng động vào
 class DynamicSemaphore:
     """
-    A thread-safe semaphore that allows changing the limit dynamically.
+    Bộ phân luồng Semaphore động hỗ trợ điều chỉnh giới hạn số luồng (limit) một cách thread-safe.
     """
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, value=3):
+        """
+        Khởi tạo Semaphore động với giá trị ban đầu mặc định là 3.
+        """
         self.value = value
         self.active_count = 0
         self.cv = threading.Condition()
 
+    # hàm đã hoạt động rồi đừng động vào
     def set_value(self, new_value):
+        """
+        Cập nhật giới hạn số luồng mới và đánh thức tất cả các luồng đang chờ nếu giới hạn tăng lên.
+        """
         with self.cv:
             self.value = new_value
             self.cv.notify_all()
 
+    # hàm đã hoạt động rồi đừng động vào
     def acquire(self):
+        """
+        Yêu cầu cấp phát tài nguyên (lock). Nếu số lượng luồng đang hoạt động vượt quá giới hạn hiện tại,
+        luồng gọi sẽ bị chặn (wait) cho đến khi có tài nguyên trống.
+        """
         with self.cv:
             while self.active_count >= self.value:
                 self.cv.wait()
             self.active_count += 1
 
+    # hàm đã hoạt động rồi đừng động vào
     def release(self):
+        """
+        Giải phóng tài nguyên (unlock), giảm số luồng hoạt động và đánh thức luồng khác đang chờ.
+        """
         with self.cv:
             self.active_count = max(0, self.active_count - 1)
             self.cv.notify_all()
 
+# hàm đã hoạt động rồi đừng động vào
 class DownloaderService:
+    """
+    Dịch vụ quản lý các worker tải xuống song song, luồng lọc trùng lặp và điều phối hệ thống.
+    """
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, context: Optional[IEngineContext] = None):
+        """
+        Khởi tạo dịch vụ DownloaderService với context của hệ thống.
+        """
         self.context = context
         self.download_threads = []
         self.dedup_thread = None
         self.monitor_control_thread = None
 
+    # hàm đã hoạt động rồi đừng động vào
     def download_image_file(self, url: str, dest_path: str) -> bool:
+        """
+        Tải tệp tin hình ảnh từ URL và lưu vào đường dẫn đích chỉ định.
+        Trả về True nếu tải thành công, ngược lại trả về False.
+        """
         if not self.context:
             return False
             
@@ -72,7 +103,13 @@ class DownloaderService:
             self.context.utils_service.log("warning", f"Lỗi tải file ảnh: {e}\n{traceback.format_exc()}")
         return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def _download_worker(self):
+        """
+        Hàm xử lý của luồng worker tải xuống. Liên tục lấy các item từ hàng đợi pending_downloads,
+        tải tệp tin media tương ứng (YouTube qua yt-dlp hoặc CDN qua requests), cập nhật trạng thái
+        và đưa vào hàng đợi lọc trùng lặp.
+        """
         if not self.context:
             return
             
@@ -416,7 +453,13 @@ class DownloaderService:
                     self.context.download_progress[ad_id]['status'] = 'done'
                 self.context.download_semaphore.release()
 
+    # hàm đã hoạt động rồi đừng động vào
     def stream_3_dedup_filter(self):
+        """
+        Luồng lọc trùng lặp video 3 lớp (Thời lượng, Âm thanh PCM MD5, và dHash trực quan).
+        Xử lý các tệp video đã tải thành công từ temp_download_dir, nếu trùng lặp thì xóa tệp tạm và lưu log,
+        nếu không trùng lặp thì di chuyển đến thư mục đích với tên duy nhất và cập nhật trạng thái hoàn tất.
+        """
         if not self.context:
             return
             
@@ -512,7 +555,12 @@ class DownloaderService:
                 except Exception:
                     pass
 
+    # hàm đã hoạt động rồi đừng động vào
     def start_system(self, thread_count=3):
+        """
+        Khởi chạy toàn bộ hệ thống tải xuống: thiết lập luồng giám sát, khởi tạo các luồng worker
+        tải xuống song song, luồng lọc trùng lặp và luồng điều khiển hệ thống.
+        """
         if not self.context:
             return
             
@@ -539,7 +587,11 @@ class DownloaderService:
         self.monitor_control_thread = threading.Thread(target=self._system_control_loop, daemon=True)
         self.monitor_control_thread.start()
 
+    # hàm đã hoạt động rồi đừng động vào
     def stop_system(self):
+        """
+        Dừng toàn bộ hệ thống tải xuống bằng cách tắt cờ chạy, đánh thức semaphore và dừng luồng giám sát.
+        """
         if not self.context:
             return
             
@@ -551,7 +603,12 @@ class DownloaderService:
         self.context.download_semaphore.set_value(99)
         time.sleep(2)
 
+    # hàm đã hoạt động rồi đừng động vào
     def _system_control_loop(self):
+        """
+        Vòng lặp điều khiển hệ thống chạy ngầm. Định kỳ kiểm tra và tự động điều chỉnh giá trị của
+        download_semaphore dựa trên khuyến nghị từ hệ thống giám sát tài nguyên (sys_monitor).
+        """
         if not self.context:
             return
             

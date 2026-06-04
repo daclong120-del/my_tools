@@ -15,10 +15,18 @@ from socialpeta_downloader.core.protocols import IEngineContext
 from socialpeta_downloader.config import settings
 
 class SessionService:
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, context: Optional[IEngineContext] = None):
+        """
+        Khởi tạo dịch vụ quản lý phiên làm việc và cơ sở dữ liệu.
+        """
         self.context = context
 
+    # hàm đã hoạt động rồi đừng động vào
     def init_db(self):
+        """
+        Khởi tạo cơ sở dữ liệu SQLite cục bộ (bảng download_history, duplicate_audit, ad_metadata) nếu chưa tồn tại.
+        """
         if not self.context:
             return
         import sqlite3
@@ -80,7 +88,11 @@ class SessionService:
         finally:
             conn.close()
 
+    # hàm đã hoạt động rồi đừng động vào
     def migrate_old_data(self, old_download_dir: Optional[str] = None):
+        """
+        Di chuyển dữ liệu cũ từ các tệp CSV và JSON tạm thời vào cơ sở dữ liệu SQLite mới.
+        """
         if not self.context:
             return
         import sqlite3
@@ -312,9 +324,10 @@ class SessionService:
         self.sync_db_to_csv()
         self.sync_audit_db_to_csv()
 
+    # hàm đã hoạt động rồi đừng động vào
     def append_to_csv(self, item: dict):
         """
-        Save or update in download_history table (thread-safe, WAL mode).
+        Lưu hoặc cập nhật bản ghi quảng cáo đã tải xuống vào SQLite (thread-safe, WAL mode) và đồng bộ hóa ra file CSV.
         """
         if not self.context:
             return
@@ -389,7 +402,11 @@ class SessionService:
             # Sync SQLite history to CSV file under lock
             self.sync_db_to_csv()
 
+    # hàm đã hoạt động rồi đừng động vào
     def append_to_audit_csv(self, ad_id: str, app_name: str, dup_ad_id: str, reason: str):
+        """
+        Ghi lịch sử phát hiện quảng cáo trùng lặp vào SQLite và đồng bộ hóa ra tệp CSV kiểm tra trùng lặp.
+        """
         if not self.context:
             return
             
@@ -422,7 +439,11 @@ class SessionService:
             # Sync duplicate audit to CSV under lock
             self.sync_audit_db_to_csv()
 
+    # hàm đã hoạt động rồi đừng động vào
     def update_master_youtube_url(self, master_ad_id: str, youtube_url: str):
+        """
+        Cập nhật URL YouTube của quảng cáo gốc (master ad) trong cơ sở dữ liệu và đồng bộ hóa lại file CSV.
+        """
         if not self.context:
             return
             
@@ -470,10 +491,10 @@ class SessionService:
             # Sync SQLite history to CSV file under lock
             self.sync_db_to_csv()
 
+    # hàm đã hoạt động rồi đừng động vào
     def sync_db_to_csv(self):
         """
-        Export all records from SQLite download_history to download_info.csv inside the active workspace.
-        Uses UTF-8-sig encoding and thread-safe locking.
+        Đồng bộ hóa dữ liệu từ bảng SQLite download_history ra tệp download_info.csv trong không gian làm việc.
         """
         if not self.context:
             return
@@ -514,10 +535,10 @@ class SessionService:
             finally:
                 conn.close()
 
+    # hàm đã hoạt động rồi đừng động vào
     def sync_audit_db_to_csv(self):
         """
-        Export all records from SQLite duplicate_audit to duplicate_audit.csv inside the active workspace.
-        Uses UTF-8-sig encoding and thread-safe locking.
+        Đồng bộ hóa dữ liệu từ bảng SQLite duplicate_audit ra tệp duplicate_audit.csv trong không gian làm việc.
         """
         if not self.context:
             return
@@ -555,9 +576,10 @@ class SessionService:
             finally:
                 conn.close()
 
+    # hàm đã hoạt động rồi đừng động vào
     def restore_session(self):
         """
-        UC-06a & UC-06b / UC-T02: Phuc hoi phien lam viec cu tu SQLite
+        Khôi phục trạng thái phiên làm việc trước đó từ cơ sở dữ liệu SQLite khi ứng dụng khởi động lại.
         """
         if not self.context:
             return

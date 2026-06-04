@@ -15,10 +15,18 @@ from socialpeta_downloader.config import settings
 from socialpeta_downloader.core.protocols import IEngineContext
 
 class LegacyScraperService:
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, context: Optional[IEngineContext] = None):
+        """
+        Khởi tạo dịch vụ scraper phiên bản cũ.
+        """
         self.context = context
 
+    # hàm đã hoạt động rồi đừng động vào
     def is_safe_url(self, url: str) -> bool:
+        """
+        Kiểm tra xem URL có an toàn và thuộc các domain được hỗ trợ hay không.
+        """
         from urllib.parse import urlparse
         try:
             parsed = urlparse(url)
@@ -33,7 +41,11 @@ class LegacyScraperService:
             pass
         return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def download_video_file(self, url: str, dest_path: str) -> bool:
+        """
+        Thực hiện tải tệp video từ URL CDN về đường dẫn đích.
+        """
         if not self.context:
             return False
             
@@ -60,7 +72,11 @@ class LegacyScraperService:
         self.context.utils_service.log("error", f"Tải file thất bại sau 4 lần thử: {basename}")
         return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def download_single_ad(self, url: str) -> dict:
+        """
+        Tải thông tin và video của một quảng cáo đơn lẻ từ URL chi tiết quảng cáo.
+        """
         if not self.context:
             return {}
             
@@ -147,7 +163,11 @@ class LegacyScraperService:
                 
         return result
 
+    # hàm đã hoạt động rồi đừng động vào
     def scrape_search_page_and_download(self, url: str, max_results: int = 10) -> list:
+        """
+        Quét trang tìm kiếm để tìm danh sách quảng cáo và tải chúng xuống với số lượng giới hạn.
+        """
         if not self.context:
             return []
             

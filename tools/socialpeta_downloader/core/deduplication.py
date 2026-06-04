@@ -19,9 +19,10 @@ class DeduplicationService:
     def __init__(self, context: Optional[IEngineContext] = None):
         self.context = context
 
+    # hàm đã hoạt động rồi đừng động vào
     def _init_image_md5_cache(self):
         """
-        Scan download folder for saved images and calculate MD5.
+        Quét thư mục tải xuống để tìm hình ảnh đã lưu và tính toán mã MD5 của chúng.
         """
         if not self.context:
             return
@@ -81,7 +82,11 @@ class DeduplicationService:
         except Exception as e:
             import traceback
             self.context.log("error", f"[-] Loi khoi tao image md5 cache: {e}\n{traceback.format_exc()}")
+    # hàm đã hoạt động rồi đừng động vào
     def _get_file_md5(self, filepath: str) -> Optional[str]:
+        """
+        Tính toán mã MD5 của một tệp tin.
+        """
         try:
             hasher = hashlib.md5()
             with open(filepath, 'rb') as f:
@@ -94,7 +99,11 @@ class DeduplicationService:
                 self.context.log("error", f"[-] Error calculating file MD5 for {filepath}: {e}\n{traceback.format_exc()}")
             return None
 
+    # hàm đã hoạt động rồi đừng động vào
     def get_video_duration(self, file_path: str) -> float:
+        """
+        Sử dụng ffprobe để lấy thời lượng (duration) của video.
+        """
         try:
             cmd = [
                 settings.FFPROBE_PATH, "-v", "error", "-show_entries", "format=duration",
@@ -110,7 +119,11 @@ class DeduplicationService:
                 print(f"[-] Loi lay duration tu ffprobe: {e}\n{traceback.format_exc()}")
             return -1.0
 
+    # hàm đã hoạt động rồi đừng động vào
     def get_audio_pcm_md5(self, file_path: str) -> Optional[str]:
+        """
+        Trích xuất luồng âm thanh dạng PCM 16kHz mono từ video bằng ffmpeg và tính mã MD5 của nó.
+        """
         try:
             cmd = [
                 settings.FFMPEG_PATH, "-y", "-i", file_path, "-f", "s16le", "-ac", "1", "-ar", "16000", "-"
@@ -125,7 +138,12 @@ class DeduplicationService:
                 self.context.log("error", f"[-] Loi lay audio PCM md5 tu ffmpeg: {e}\n{traceback.format_exc()}")
             return None
 
+    # hàm đã hoạt động rồi đừng động vào
     def get_frame_hash_and_brightness(self, file_path: str, timestamp: float) -> Optional[Tuple[int, float]]:
+        """
+        Trích xuất một khung hình tại thời điểm timestamp, giảm độ phân giải xuống 9x8 grayscale,
+        tính toán mã dHash trực quan và độ sáng trung bình của khung hình đó.
+        """
         try:
             cmd = [
                 settings.FFMPEG_PATH, "-y", "-ss", f"{timestamp:.3f}", "-i", file_path,
@@ -151,7 +169,11 @@ class DeduplicationService:
                 self.context.log("error", f"[-] Loi lay frame hash/brightness: {e}\n{traceback.format_exc()}")
             return None
 
+    # hàm đã hoạt động rồi đừng động vào
     def get_temp_json_path(self, ad_id: str) -> Optional[str]:
+        """
+        Tìm kiếm đường dẫn tệp JSON tạm thời của quảng cáo dựa trên ad_id trong các thư mục tab tạm.
+        """
         if not self.context or not os.path.exists(self.context.temp_queue_dir):
             return None
         try:
@@ -166,9 +188,10 @@ class DeduplicationService:
                 self.context.log("error", f"[-] Error listing/searching temp queue dir: {e}\n{traceback.format_exc()}")
         return None
 
+    # hàm đã hoạt động rồi đừng động vào
     def check_duplicate(self, new_file: str) -> Tuple[bool, str, str]:
         """
-        3-layer deduplication matching.
+        Thực hiện đối khớp lọc trùng video qua 3 lớp (Thời lượng, MD5 âm thanh PCM, mã dHash trực quan).
         """
         if not self.context:
             return False, "", "Context missing"

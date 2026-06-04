@@ -13,10 +13,18 @@ from socialpeta_downloader.core.protocols import IEngineContext
 from socialpeta_downloader.core.utils import is_socialpeta_url
 
 class LegacySnifferService:
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, context: Optional[IEngineContext] = None):
+        """
+        Khởi tạo dịch vụ sniffer phiên bản cũ.
+        """
         self.context = context
 
+    # hàm đã hoạt động rồi đừng động vào
     def _process_api_response(self, data: dict):
+        """
+        Phân tích phản hồi API, kiểm tra trùng lặp và xếp các creative mới vào hàng đợi tải xuống.
+        """
         if not self.context:
             return
             
@@ -76,9 +84,10 @@ class LegacySnifferService:
             print(f"[-] Sniffer error parsing creative list: {e}")
             self.context.page_packet_received.set()
 
+    # hàm đã hoạt động rồi đừng động vào
     def stream_1_sniffer(self):
         """
-        Stream 1 Thread. Handles Chrome CDP connection and Network Sniffing.
+        Tiến trình Stream 1 Thread. Kết nối CDP đến Chrome và lắng nghe các phản hồi mạng (network sniffing).
         """
         print("[*] Stream 1 (Sniffer) bat dau...")
         if not self.context:
@@ -173,7 +182,11 @@ class LegacySnifferService:
                 self.context.active_page = None
                 time.sleep(5)
 
+    # hàm đã hoạt động rồi đừng động vào
     def run_pagination_loop(self, page):
+        """
+        Thực hiện vòng lặp phân trang tự động cho trình duyệt theo cơ chế cũ.
+        """
         if not self.context:
             return
             
@@ -295,7 +308,11 @@ class LegacySnifferService:
             
         print("[+] Hoan thanh quynh trinh Pagination Sniffing.")
 
+    # hàm đã hoạt động rồi đừng động vào
     def soft_trigger(self, page) -> bool:
+        """
+        Kích hoạt mềm bằng cách cuộn trang hoặc click nút Tìm kiếm để ép trang tải lại dữ liệu khi bị timeout/treo.
+        """
         if not self.context:
             return False
             

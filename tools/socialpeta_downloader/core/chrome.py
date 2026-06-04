@@ -19,8 +19,8 @@ class ChromeService:
     # hàm đã hoạt động rồi đừng động vào
     def ensure_chrome_debug_port(self, port: Optional[int] = None) -> bool:
         """
-        Check if port is already open. If not, try to launch a local instance of Google
-        Chrome with the remote debugging port enabled using a custom debug profile.
+        Kiểm tra xem cổng debug đã được mở chưa. Nếu chưa, thử khởi chạy một trình duyệt
+        Google Chrome cục bộ với chế độ Remote Debugging port và cấu hình profile riêng biệt.
         """
         port = port if port is not None else settings.CHROME_DEBUG_PORT
             
@@ -66,7 +66,10 @@ class ChromeService:
             return False
             
         # Launch with custom user data directory to run side-by-side with user's main Chrome without blocking
-        chrome_profile_dir = os.path.join(settings.DATA_DIR, "chrome_debug_profile")
+        if port == 9222:
+            chrome_profile_dir = os.path.join(settings.DATA_DIR, "chrome_debug_profile")
+        else:
+            chrome_profile_dir = os.path.join(settings.DATA_DIR, f"chrome_debug_profile_{port}")
         os.makedirs(chrome_profile_dir, exist_ok=True)
         cmd = [
             chrome_path,
@@ -106,7 +109,12 @@ class ChromeService:
                 print(f"[-] Failed to launch Chrome: {e}\n{traceback.format_exc()}")
             return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def _is_chrome_cdp_active(self, port: int) -> bool:
+        """
+        Kiểm tra xem cổng debug CDP của Chrome đã hoạt động hay chưa bằng cách gửi
+        yêu cầu HTTP GET tới endpoint cục bộ /json/version.
+        """
         import requests
         try:
             resp = requests.get(f"http://127.0.0.1:{port}/json/version", timeout=2.0)
@@ -116,15 +124,25 @@ class ChromeService:
             pass
         return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def check_and_launch_chrome(self, port: Optional[int] = None) -> bool:
         """
-        Alias wrapper to keep compatibility with routes.py calling core.check_and_launch_chrome(port)
+        Tên bí danh (alias wrapper) để tương thích với các tệp tin bên ngoài (như routes.py)
+        khi gọi phương thức khởi chạy Chrome debug port.
         """
         return self.ensure_chrome_debug_port(port)
 
+    # hàm đã hoạt động rồi đừng động vào
     def check_login_status(self, port: Optional[int] = None) -> bool:
+        """
+        Kiểm tra trạng thái đăng nhập bằng cách đảm bảo cổng debug Chrome đang mở.
+        """
         return self.ensure_chrome_debug_port(port)
 
+    # hàm đã hoạt động rồi đừng động vào
     def run_login_flow(self, port: Optional[int] = None) -> bool:
-        # Just ensure the Chrome debug port is open. No extra browser is launched.
+        """
+        Khởi chạy tiến trình đăng nhập bằng cách đảm bảo cổng debug Chrome đã được mở sẵn.
+        Không khởi chạy thêm cửa sổ phụ nào.
+        """
         return self.ensure_chrome_debug_port(port)

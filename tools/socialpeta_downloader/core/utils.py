@@ -17,10 +17,18 @@ from socialpeta_downloader.config import settings
 from socialpeta_downloader.core.protocols import IEngineContext
 
 class SafeStreamWrapper:
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, original_stream):
+        """
+        Khởi tạo bộ bọc luồng an toàn (Safe Stream Wrapper).
+        """
         self.original_stream = original_stream
 
+    # hàm đã hoạt động rồi đừng động vào
     def write(self, data):
+        """
+        Ghi dữ liệu vào luồng, tự động xử lý lỗi UnicodeEncodeError bằng cách mã hóa utf-8 hoặc backslashreplace.
+        """
         if not self.original_stream:
             return
         try:
@@ -37,14 +45,22 @@ class SafeStreamWrapper:
                 except Exception:
                     pass
 
+    # hàm đã hoạt động rồi đừng động vào
     def flush(self):
+        """
+        Xả bộ nhớ đệm của luồng.
+        """
         if self.original_stream and hasattr(self.original_stream, 'flush'):
             try:
                 self.original_stream.flush()
             except Exception:
                 pass
 
+    # hàm đã hoạt động rồi đừng động vào
     def __getattr__(self, name):
+        """
+        Ủy thác truy cập thuộc tính cho luồng gốc.
+        """
         return getattr(self.original_stream, name)
 
 if sys.stdout is not None and not isinstance(sys.stdout, SafeStreamWrapper):
@@ -53,7 +69,11 @@ if sys.stderr is not None and not isinstance(sys.stderr, SafeStreamWrapper):
     sys.stderr = SafeStreamWrapper(sys.stderr)
 
 class RefCountedLock:
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, fpath: str, item_locks: dict, item_locks_lock: threading.Lock):
+        """
+        Khởi tạo khóa đếm tham chiếu (Reference-Counted Lock) cho một đường dẫn file cụ thể.
+        """
         self.fpath = fpath
         self.item_locks = item_locks
         self.item_locks_lock = item_locks_lock
@@ -64,17 +84,33 @@ class RefCountedLock:
             self.lock_info[1] += 1
             self.lock = self.lock_info[0]
 
+    # hàm đã hoạt động rồi đừng động vào
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        """
+        Yêu cầu sở hữu khóa.
+        """
         return self.lock.acquire(blocking, timeout)
 
+    # hàm đã hoạt động rồi đừng động vào
     def release(self) -> None:
+        """
+        Giải phóng khóa.
+        """
         self.lock.release()
 
+    # hàm đã hoạt động rồi đừng động vào
     def __enter__(self):
+        """
+        Hỗ trợ sử dụng làm context manager (với câu lệnh `with`).
+        """
         self.lock.acquire()
         return self
 
+    # hàm đã hoạt động rồi đừng động vào
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Tự động giải phóng khóa khi thoát khỏi khối context manager.
+        """
         self.lock.release()
         with self.item_locks_lock:
             self.lock_info[1] -= 1
@@ -82,17 +118,29 @@ class RefCountedLock:
                 if self.item_locks.get(self.fpath) is self.lock_info:
                     self.item_locks.pop(self.fpath, None)
 
+# hàm đã hoạt động rồi đừng động vào
 def is_socialpeta_url(url: str) -> bool:
+    """
+    Kiểm tra xem URL có thuộc miền SocialPeta hoặc Guangdada hay không.
+    """
     if not url:
         return False
     u = url.lower()
     return "socialpeta.com" in u or "guangdada.com" in u
 
 class UtilsService:
+    # hàm đã hoạt động rồi đừng động vào
     def __init__(self, context: Optional[IEngineContext] = None):
+        """
+        Khởi tạo dịch vụ tiện ích với ngữ cảnh của Engine.
+        """
         self.context = context
 
+    # hàm đã hoạt động rồi đừng động vào
     def bring_chrome_to_foreground(self) -> bool:
+        """
+        Kích hoạt cửa sổ Chrome lên trước (foreground) thông qua PowerShell để ngăn chặn hiện tượng đóng băng tab.
+        """
         import subprocess
         ps_cmd = "[void][System.Reflection.Assembly]::LoadWithPartialName('Microsoft.VisualBasic'); [Microsoft.VisualBasic.Interaction]::AppActivate('Google Chrome')"
         try:
@@ -103,7 +151,11 @@ class UtilsService:
             print(f"[-] Failed to activate Chrome window: {e}")
             return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def log(self, level: str, message: str):
+        """
+        Ghi nhật ký log hệ thống vào hàng đợi và in ra màn hình console.
+        """
         msg = {
             "type": level,
             "timestamp": datetime.now().strftime("%H:%M:%S"),
@@ -121,7 +173,11 @@ class UtilsService:
                 return
         print(f"[{level.upper()}] {message}")
 
+    # hàm đã hoạt động rồi đừng động vào
     def clear_logs(self):
+        """
+        Xóa sạch hàng đợi nhật ký log.
+        """
         if not self.context:
             return
         while not self.context.log_queue.empty():
@@ -137,17 +193,20 @@ class UtilsService:
                     except Exception:
                         break
 
+    # hàm đã hoạt động rồi đừng động vào
     def get_item_lock(self, fpath: str) -> Any:
+        """
+        Lấy đối tượng khóa đếm tham chiếu (RefCountedLock) cho tệp.
+        """
         # RefCountedLock expects the lock dict and lock object from the context
         item_locks = self.context.item_locks if self.context else {}
         item_locks_lock = self.context.item_locks_lock if self.context else threading.Lock()
         return RefCountedLock(fpath, item_locks, item_locks_lock)
 
+    # hàm đã hoạt động rồi đừng động vào
     def get_relative_path(self, path: str) -> str:
         """
-        Converts an absolute path to a relative path from the current download_dir.
-        If the path is already relative, or cannot be made relative to the download_dir,
-        returns the path normalized.
+        Chuyển đổi đường dẫn tuyệt đối thành đường dẫn tương đối so với thư mục tải xuống download_dir.
         """
         if not path:
             return ""
@@ -165,11 +224,10 @@ class UtilsService:
             
         return os.path.normpath(path)
 
+    # hàm đã hoạt động rồi đừng động vào
     def resolve_saved_path(self, path: str) -> str:
         """
-        Resolves a saved path (which might be relative) back to an absolute path.
-        If the path is relative, resolves it relative to the current download_dir.
-        If it's already absolute, returns it as-is.
+        Phân giải đường dẫn tương đối đã lưu thành đường dẫn tuyệt đối tương ứng.
         """
         if not path:
             return ""
@@ -181,12 +239,20 @@ class UtilsService:
             
         return os.path.normpath(os.path.join(self.context.download_dir, path))
 
+    # hàm đã hoạt động rồi đừng động vào
     def get_db_path(self) -> str:
+        """
+        Lấy đường dẫn tệp cơ sở dữ liệu SQLite của ứng dụng.
+        """
         if self.context and getattr(self.context, "download_dir", None):
             return os.path.join(self.context.download_dir, "db.sqlite3")
         return os.path.join(settings.DATA_DIR, "db.sqlite3")
 
+    # hàm đã hoạt động rồi đừng động vào
     def db_get_item(self, ad_id: str) -> Optional[dict]:
+        """
+        Lấy thông tin quảng cáo từ SQLite bằng ad_id.
+        """
         import sqlite3
         db_path = self.get_db_path()
         conn = sqlite3.connect(db_path, timeout=10.0)
@@ -208,7 +274,11 @@ class UtilsService:
             conn.close()
         return None
 
+    # hàm đã hoạt động rồi đừng động vào
     def db_get_item_by_fpath(self, fpath: str) -> Optional[dict]:
+        """
+        Lấy thông tin quảng cáo từ SQLite bằng đường dẫn tệp fpath.
+        """
         import sqlite3
         db_path = self.get_db_path()
         conn = sqlite3.connect(db_path, timeout=10.0)
@@ -230,7 +300,11 @@ class UtilsService:
             conn.close()
         return None
 
+    # hàm đã hoạt động rồi đừng động vào
     def _write_item_file(self, fpath: str, item: dict):
+        """
+        Ghi tệp tin metadata quảng cáo hoặc cập nhật trạng thái của quảng cáo vào cơ sở dữ liệu SQLite.
+        """
         import sqlite3
         db_path = self.get_db_path()
         ad_id = item.get("ad_id")
@@ -284,7 +358,11 @@ class UtilsService:
         finally:
             conn.close()
 
+    # hàm đã hoạt động rồi đừng động vào
     def _save_item_state(self, item: dict):
+        """
+        Lưu trạng thái của một quảng cáo có khóa bảo vệ đa luồng.
+        """
         fpath = item.get("fpath")
         if not fpath:
             temp_queue_dir = self.context.temp_queue_dir if self.context else "data/.temp"
@@ -297,7 +375,11 @@ class UtilsService:
         with lock:
             self._write_item_file(fpath, item)
 
+    # hàm đã hoạt động rồi đừng động vào
     def clean_app_name(self, app_name: str) -> str:
+        """
+        Chuẩn hóa và làm sạch tên ứng dụng từ chuỗi thô đầu vào.
+        """
         if not app_name:
             return "UnknownApp"
         
@@ -330,7 +412,11 @@ class UtilsService:
                 return single_word[:2]
             return single_word[0].upper() + single_word[1:] if len(single_word) > 1 else single_word.upper()
 
+    # hàm đã hoạt động rồi đừng động vào
     def get_unique_filename(self, app_name: str) -> tuple[str, int]:
+        """
+        Tạo một tên tệp tin video duy nhất dựa trên tên ứng dụng và ngày hiện tại.
+        """
         clean_name = self.clean_app_name(app_name)
         date_str = datetime.now().strftime("%d%m%Y")
         
@@ -343,7 +429,11 @@ class UtilsService:
         filename = f"{clean_name}_SPY_{date_str}_{stt}.mp4"
         return filename, stt
 
+    # hàm đã hoạt động rồi đừng động vào
     def get_unique_image_filename(self, app_name: str, url: str) -> tuple[str, int]:
+        """
+        Tạo một tên tệp tin hình ảnh duy nhất dựa trên tên ứng dụng, URL ảnh và ngày hiện tại.
+        """
         clean_name = self.clean_app_name(app_name)
         date_str = datetime.now().strftime("%d%m%Y")
         ext = ".jpg"
@@ -361,10 +451,18 @@ class UtilsService:
         filename = f"{clean_name}_SPY_{date_str}_{stt}{ext}"
         return filename, stt
 
+    # hàm đã hoạt động rồi đừng động vào
     def clean_filename(self, filename: str) -> str:
+        """
+        Loại bỏ các ký tự không hợp lệ trong tên tệp tin trên hệ thống Windows.
+        """
         return re.sub(r'[\\/*?:"<>|]', "", filename)
 
+    # hàm đã hoạt động rồi đừng động vào
     def extract_ad_id(self, url: str) -> str:
+        """
+        Trích xuất ad_id từ đường dẫn URL cho trước.
+        """
         match = re.search(r"[?&]id=([^&]+)", url)
         if match:
             return match.group(1)
@@ -375,7 +473,11 @@ class UtilsService:
                 return last
         return ""
 
+    # hàm đã hoạt động rồi đừng động vào
     def _read_temp_json(self) -> dict:
+        """
+        Đọc tất cả metadata quảng cáo thô từ cơ sở dữ liệu SQLite dưới dạng từ điển.
+        """
         import sqlite3
         data = {}
         db_path = self.get_db_path()
@@ -398,7 +500,11 @@ class UtilsService:
             conn.close()
         return data
 
+    # hàm đã hoạt động rồi đừng động vào
     def _is_ad_already_downloaded(self, ad_id: str) -> bool:
+        """
+        Kiểm tra xem quảng cáo có mã ad_id đã được tải về đĩa cứng thành công hay chưa.
+        """
         if self.context:
             status = self.context.ad_id_to_status.get(ad_id)
             if status in ("done", "downloaded"):
@@ -431,7 +537,11 @@ class UtilsService:
             conn.close()
         return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def _is_ad_already_downloading_or_done(self, ad_id: str, exclude_path: Optional[str] = None) -> bool:
+        """
+        Kiểm tra xem quảng cáo đang được tải hoặc đã hoàn thành việc tải hay chưa.
+        """
         if self._is_ad_already_downloaded(ad_id):
             return True
         if self.context:
@@ -440,7 +550,11 @@ class UtilsService:
                 return True
         return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def _get_playwright_context(self, p):
+        """
+        Khởi tạo hoặc lấy Playwright Browser Context kèm theo trạng thái phiên đăng nhập.
+        """
         session_dir = self.context.session_dir if self.context else "data/session"
         state_file = os.path.join(session_dir, "storage_state.json")
         return p.chromium.launch_persistent_context(
@@ -450,7 +564,11 @@ class UtilsService:
             storage_state=state_file if os.path.exists(state_file) else None
         )
 
+    # hàm đã hoạt động rồi đừng động vào
     def _click_page_button(self, page, page_num: int) -> bool:
+        """
+        Thực hiện click vào nút số trang trên giao diện phân trang.
+        """
         selectors = [
             f"li.ant-pagination-item-{page_num}",
             f"ul.ant-pagination li.ant-pagination-item-{page_num}",
@@ -474,7 +592,11 @@ class UtilsService:
                 continue
         return False
 
+    # hàm đã hoạt động rồi đừng động vào
     def _jump_to_page(self, page, page_num: int) -> bool:
+        """
+        Thực hiện nhảy trang bằng ô nhập nhanh hoặc chuyển tiếp dự phòng.
+        """
         selectors = [
             ".ant-pagination-options-quick-jumper input",
             ".ant-pagination-options input",
@@ -519,6 +641,9 @@ class UtilsService:
 
     # hàm đã hoạt động rồi đừng động vào
     def _recursive_find_creatives(self, obj) -> List[dict]:
+        """
+        Tìm kiếm đệ quy các đối tượng creative (quảng cáo) từ cấu trúc dữ liệu JSON phản hồi.
+        """
         if isinstance(obj, dict):
             has_id = ('id' in obj or 'creative_id' in obj or 'creativeId' in obj or 
                       'creativeIdStr' in obj or 'ad_key' in obj)
@@ -545,6 +670,9 @@ class UtilsService:
 
     # hàm đã hoạt động rồi đừng động vào
     def _parse_creative_item(self, raw_item: dict) -> dict:
+        """
+        Phân tích cú pháp dữ liệu quảng cáo thô thu được từ API thành cấu trúc chuẩn để tải xuống.
+        """
         ad_id = str(raw_item.get('id') or raw_item.get('creative_id') or raw_item.get('creativeId') or raw_item.get('creativeIdStr') or raw_item.get('ad_key') or '')
         
         video_url = raw_item.get('video_url') or raw_item.get('videoUrl') or raw_item.get('media_url') or raw_item.get('mediaUrl') or raw_item.get('video') or ''
