@@ -783,3 +783,41 @@ class UtilsService:
             "status": "pending"
         }
 
+    def get_current_page(self, page) -> int:
+        """
+        Detects the current page number by looking at the active item on the pagination UI.
+        Returns the page number as integer, or 1 as fallback if not found.
+        """
+        selectors = [
+            "li.ant-pagination-item-active",
+            "ul.ant-pagination li.ant-pagination-item-active",
+            "li.number.active",
+            ".el-pagination li.active",
+            "li.active",
+            "button.active",
+            "[aria-current='page']"
+        ]
+        for sel in selectors:
+            try:
+                loc = page.locator(sel).first
+                if loc.count() > 0:
+                    text = loc.inner_text().strip()
+                    if text.isdigit():
+                        return int(text)
+            except Exception:
+                continue
+        return 1
+
+    def scroll_to_bottom(self, page, scroll_delay: float = 0.5) -> None:
+        """
+        Cuộn xuống dưới cùng của trang bằng cách sử dụng evaluate JavaScript.
+        """
+        try:
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            if scroll_delay > 0:
+                time.sleep(scroll_delay)
+        except Exception as e:
+            self.log("error", f"[-] Lỗi khi cuộn trang: {e}")
+
+
+

@@ -23,6 +23,37 @@ class TabScanner:
         """
         self.context = context
 
+    def connect_to_active_tab(self, playwright, port: int = 9222):
+        """
+        Đảm bảo cổng debug, đưa Chrome lên foreground, tìm tab hoạt động đầu tiên
+        và trả về đối tượng browser và page từ Playwright.
+        """
+        if not self.context:
+            return None, None
+        if not self.context.chrome_service.ensure_chrome_debug_port(port):
+            return None, None
+        self.context.utils_service.bring_chrome_to_foreground()
+        active_tabs = self.detect_tabs(port)
+        if not active_tabs:
+            return None, None
+        tab_id = active_tabs[0]["tab_id"]
+        
+        browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+        context = browser.contexts[0]
+        try:
+            temp_page = context.new_page()
+            temp_page.close()
+        except Exception:
+            pass
+        page = self._find_page_by_id(context, tab_id)
+        if page:
+            try:
+                page.set_default_timeout(10000)
+                page.bring_to_front()
+            except Exception:
+                pass
+        return browser, page
+
     # hàm đã hoạt động rồi đừng động vào
     def detect_tabs(self, port: Optional[int] = None) -> list:
         """

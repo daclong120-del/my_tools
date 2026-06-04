@@ -309,3 +309,22 @@ class SocialPetaDownloaderCore:
     def scrape_search_page_and_download(self, url: str, max_results: int = 10) -> List[dict]:
         return self.legacy_scraper.scrape_search_page_and_download(url, max_results)
 
+    def get_current_page(self, page) -> int:
+        return self.utils_service.get_current_page(page)
+
+    def scroll_to_bottom(self, page, scroll_delay: float = 0.5) -> None:
+        self.utils_service.scroll_to_bottom(page, scroll_delay)
+
+    def connect_to_active_tab(self, playwright, port: int = 9222):
+        return self.tab_scanner.connect_to_active_tab(playwright, port)
+
+
+    def append_to_custom_csv(self, filepath: str, item: dict) -> None:
+        """
+        Ghi thêm một bản ghi quảng cáo vào file CSV tùy chỉnh (ủy quyền qua SessionService).
+        """
+        self.session_service.append_to_custom_csv(filepath, item)
+
+
+
+

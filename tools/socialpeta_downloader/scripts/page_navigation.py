@@ -91,9 +91,9 @@ def main():
             else:
                 print(f"[-] Thất bại chuyển sang Trang {p_num}")
                 
-        # === CHU KỲ 2: DI CHUYỂN TỪ TRANG 20 -> TRANG 1 ===
-        print("\n=== [2] Bắt đầu quay ngược từ Trang 20 về Trang 1 ===")
-        for p_num in range(20, 0, -1):
+        # === CHU KỲ 2: DI CHUYỂN TỪ TRANG 20 -> TRANG 2 ===
+        print("\n=== [2] Bắt đầu quay ngược từ Trang 20 về Trang 2 ===")
+        for p_num in range(20, 1, -1):
             print(f"[*] Đang chuyển ngược về Trang {p_num}...")
             ok = navigate_to_page(core, page, p_num)
             if ok:

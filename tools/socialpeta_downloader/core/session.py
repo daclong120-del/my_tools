@@ -656,3 +656,35 @@ class SessionService:
             conn.close()
             
         print(f"[+] Phuc hoi phien: Reset {reset_count} item ve pending, xep hang {restored_filter_count} item cho dedup.")
+
+    def append_to_custom_csv(self, filepath: str, item: dict):
+        """
+        Ghi thêm một bản ghi quảng cáo vào file CSV tùy chỉnh (thread-safe).
+        """
+        if not self.context:
+            return
+            
+        with self.context.history_lock:
+            import csv
+            fieldnames = ["ad_id", "video_name", "media_type", "video_url", "youtube_url", "image_url",
+                          "duration", "impression", "heat", "platform", "download_time",
+                          "publisher", "app_name", "area", "copywriting_language", "title",
+                          "body", "deployment_time", "saved_path", "file_size"]
+            
+            row_dict = {}
+            for f in fieldnames:
+                row_dict[f] = item.get(f, "")
+                
+            file_exists = os.path.exists(filepath)
+            os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+            
+            try:
+                with open(filepath, 'a', encoding='utf-8-sig', newline='', errors='ignore') as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    if not file_exists:
+                        writer.writeheader()
+                    writer.writerow(row_dict)
+            except Exception as e:
+                import traceback
+                self.context.log("error", f"[-] Error writing to custom CSV: {e}\n{traceback.format_exc()}")
+
