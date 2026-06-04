@@ -50,6 +50,7 @@ async def run_ws_sniffer_10_pages():
         return
         
     utils = UtilsService()
+    all_raw_items = []
     all_unique_items = {}
     
     print(f"[*] Connecting to WebSocket: {ws_url}")
@@ -137,7 +138,10 @@ async def run_ws_sniffer_10_pages():
                 if parsed.get("ad_id"):
                     page_items.append(parsed)
                     
-            # Add to main dict
+            # Add all items to raw list
+            all_raw_items.extend(page_items)
+            
+            # Print unique progress for tracking
             new_discovered = 0
             for item in page_items:
                 ad_id = item["ad_id"]
@@ -145,13 +149,16 @@ async def run_ws_sniffer_10_pages():
                     all_unique_items[ad_id] = item
                     new_discovered += 1
                     
-            print(f"[+] Page {current_page} parsed: Found {len(page_items)} creatives ({new_discovered} new, {len(all_unique_items)} cumulative unique).")
+            print(f"[+] Page {current_page} parsed: Found {len(page_items)} creatives ({new_discovered} new, cumulative raw: {len(all_raw_items)}).")
             
             # If we reached Page 10, do not click Next Page
             if current_page == 10:
                 print("[*] Reached target Page 10. Completed.")
                 break
                 
+            # Wait for DOM to stabilize and mount pagination elements
+            await asyncio.sleep(1.5)
+            
             # Click the Next Page button
             print("[*] Clicking 'Next Page' button via Page JS Evaluation...")
             click_expr = """
@@ -208,13 +215,13 @@ async def run_ws_sniffer_10_pages():
             await asyncio.sleep(2.0)
             
     print("\n=================== CRAWL COMPLETE ===================")
-    print(f"[+] Total unique creative items captured across all pages: {len(all_unique_items)}")
+    print(f"[+] Total raw creative items captured: {len(all_raw_items)}")
     
     # Save results to discovered_creatives_10_pages.json
     out_file = "test_env/discovered_creatives_10_pages.json"
     with open(out_file, "w", encoding="utf-8") as f:
-        json.dump(list(all_unique_items.values()), f, ensure_ascii=False, indent=2)
-    print(f"[+] Saved all {len(all_unique_items)} items to {out_file}")
+        json.dump(all_raw_items, f, ensure_ascii=False, indent=2)
+    print(f"[+] Saved all {len(all_raw_items)} items to {out_file}")
 
 if __name__ == '__main__':
     asyncio.run(run_ws_sniffer_10_pages())
