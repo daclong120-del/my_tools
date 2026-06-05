@@ -8,12 +8,14 @@ description: Quy trình tự động hóa đóng gói ứng dụng Python CLI/GU
 Kỹ năng này mô tả quy trình để đóng gói một ứng dụng Python (CLI hoặc GUI) sao cho nó có kết quả đẹp, chuyên nghiệp, tự động tạo ra file Setup (Installer) chuẩn xác như Electron mà không gặp lỗi quyền ghi file.
 
 ## 1. Vấn đề thường gặp khi build Nuitka
+
 1. **Rác thư mục:** Nuitka `--standalone` sinh ra hàng trăm file `.dll`, `.pyd`. Người dùng nhìn vào sẽ thấy rất rối.
 2. **Thiếu Launcher .exe đẹp:** Cách thông thường hay dùng `.bat` làm file chạy, trông không chuyên nghiệp và không có icon.
 3. **Lỗi Quyền Admin (UAC):** Nếu đóng gói Inno Setup cài vào `C:\Program Files`, app sẽ không thể ghi log hoặc tải data vào thư mục cài đặt trừ khi người dùng chạy bằng quyền Admin.
 4. **Tốc độ:** Chạy `--onefile` mỗi lần mở app phải chờ xả nén lâu (2-4 giây).
 
 ## 2. Giải pháp Cấu trúc "App Core"
+
 Chúng ta sẽ giải quyết tất cả bằng cấu trúc sau sau khi Nuitka chạy xong:
 
 ```text
@@ -22,9 +24,11 @@ build\app_dist\
   ├── data\                   (Thư mục trống để app ghi data - tuỳ chọn)
   └── MyApp.exe               (File C++ Launcher siêu nhỏ 50KB, CÓ ICON. Chạy file này sẽ gọi file trong app_core)
 ```
+
 Sau đó, nén toàn bộ `build\app_dist\` thành **MyApp Setup 1.0.0.exe** bằng Inno Setup.
 
 ## 3. Tích hợp Launcher C++ & Inno Setup vào Batch Script
+
 Thêm đoạn mã sau vào cuối file `.bat` build Nuitka của bạn (sau khi Nuitka đã build xong):
 
 ```bat
@@ -76,6 +80,7 @@ if exist "%INNO_SETUP%" (
 ```
 
 ## 4. Cấu hình Inno Setup (.iss)
+
 Tạo file `scripts\setup_installer.iss` với nội dung chú ý ở dòng `DefaultDirName`:
 
 ```iss
@@ -110,6 +115,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 ```
 
 ## 5. Kết luận
+
 - Mọi logic rác của Python được ẩn đi.
 - Tốc độ khởi động siêu tốc (so với `--onefile`).
 - Quá trình setup trông như một app Electron thực thụ.

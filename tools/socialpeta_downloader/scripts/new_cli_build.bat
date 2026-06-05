@@ -14,14 +14,35 @@ echo ===================================================
 set PYTHONPATH=tools
 set PYTHONIOENCODING=utf-8
 
-:: Goi MSVC Compiler x64 de phuc vu bien dich Launcher C++
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
+:: Tim kiem vcvarsall.bat cho MSVC Compiler x64 de phuc vu bien dich Launcher C++
+set "VCVARSALL="
+if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" (
+    set "VCVARSALL=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
+) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat" (
+    set "VCVARSALL=C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat"
+) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" (
+    set "VCVARSALL=C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"
+) else if exist "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" (
+    set "VCVARSALL=C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
+)
+
+if not "%VCVARSALL%"=="" (
+    call "%VCVARSALL%" amd64
+) else (
+    echo [LOI] Khong tim thay vcvarsall.bat de bien dich Launcher C++!
+    pause
+    exit /b 1
+)
 
 :: Don dep thu muc build cu neu co de tranh xung dot file lock
 set "RANDVAL=%RANDOM%"
 if exist "build\new_cli.dist" (
     ren "build\new_cli.dist" "new_cli.dist.old.%RANDVAL%"
     rd /s /q "build\new_cli.dist.old.%RANDVAL%"
+)
+if exist "build\new_cli.build" (
+    ren "build\new_cli.build" "new_cli.build.old.%RANDVAL%"
+    rd /s /q "build\new_cli.build.old.%RANDVAL%"
 )
 if exist "build\SocialPetaDownloaderNew" (
     ren "build\SocialPetaDownloaderNew" "SocialPetaDownloaderNew.old.%RANDVAL%"
@@ -59,11 +80,21 @@ set "APP_CORE=%DIST_DIR%\app_core"
 echo ===================================================
 echo [4/6] Sao chep FFmpeg, FFprobe va thu vien VC++ Runtime...
 echo ===================================================
-:: Sao chep FFmpeg & FFprobe
-copy /Y "electron\resources\ffmpeg.exe" "%APP_CORE%\ffmpeg.exe"
-copy /Y "electron\resources\ffprobe.exe" "%APP_CORE%\ffprobe.exe"
+:: Sao chep FFmpeg & FFprobe (Uu tien tu resources\bin neu co)
+if exist "resources\bin\ffmpeg.exe" (
+    copy /Y "resources\bin\ffmpeg.exe" "%APP_CORE%\ffmpeg.exe"
+) else (
+    copy /Y "electron\resources\ffmpeg.exe" "%APP_CORE%\ffmpeg.exe"
+)
 
-:: Sao chep cac thu vien DLL cua MSVC C++ Redistributable
+if exist "resources\bin\ffprobe.exe" (
+    copy /Y "resources\bin\ffprobe.exe" "%APP_CORE%\ffprobe.exe"
+) else (
+    copy /Y "electron\resources\ffprobe.exe" "%APP_CORE%\ffprobe.exe"
+)
+
+:: Sao chep cac thu vien DLL cua MSVC C++ Redistributable de tro giup run standalone
+if exist "C:\Windows\System32\vcruntime140.dll" copy /Y "C:\Windows\System32\vcruntime140.dll" "%APP_CORE%\vcruntime140.dll"
 copy /Y "C:\Windows\System32\msvcp140.dll" "%APP_CORE%\msvcp140.dll"
 copy /Y "C:\Windows\System32\msvcp140_1.dll" "%APP_CORE%\msvcp140_1.dll"
 copy /Y "C:\Windows\System32\msvcp140_2.dll" "%APP_CORE%\msvcp140_2.dll"
@@ -71,6 +102,8 @@ copy /Y "C:\Windows\System32\msvcp140_atomic_wait.dll" "%APP_CORE%\msvcp140_atom
 copy /Y "C:\Windows\System32\msvcp140_codecvt_ids.dll" "%APP_CORE%\msvcp140_codecvt_ids.dll"
 copy /Y "C:\Windows\System32\vcruntime140_threads.dll" "%APP_CORE%\vcruntime140_threads.dll"
 
+:: Khoi tao thu muc data (tuong thich voi cau truc sach cua build_cli.md)
+if not exist "%DIST_DIR%\data" mkdir "%DIST_DIR%\data"
 echo ===================================================
 echo [5/6] Bien dich C++ Launcher (An file rac, kem Icon)...
 echo ===================================================
@@ -111,7 +144,7 @@ set "INNO_SETUP=%LOCALAPPDATA%\Programs\Inno Setup 6\iscc.exe"
 if not exist "%INNO_SETUP%" set "INNO_SETUP=C:\Program Files (x86)\Inno Setup 6\iscc.exe"
 
 if exist "%INNO_SETUP%" (
-    "%INNO_SETUP%" /dMyOutputDir="%PROJECT_DIR%\build" /dMyDistDir="%PROJECT_DIR%\%DIST_DIR%" /dMyProjectDir="%PROJECT_DIR%\" "%PROJECT_DIR%\scripts\setup_installer.iss"
+    "%INNO_SETUP%" /dMyOutputDir="%PROJECT_DIR%\build" /dMyDistDir="%PROJECT_DIR%\%DIST_DIR%" /dMyProjectDir="%PROJECT_DIR%\\" "%PROJECT_DIR%\scripts\setup_installer.iss"
     if not errorlevel 1 (
         echo [OK] Da tao thanh cong bo cai dat tai thu muc build\
     ) else (
