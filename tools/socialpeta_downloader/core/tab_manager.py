@@ -566,3 +566,155 @@ class TabScanner:
                 if current_status not in ("closed", "failed", "expired"):
                     self.context.tab_states[tab_index]["status"] = "done"
                 print(f"[+] Tab {tab_index} Scraper dung. Trang thai cuoi: {self.context.tab_states[tab_index]['status']}")
+
+    def run_connect_current_tab_cli(self, argv: Optional[List[str]] = None) -> None:
+        """
+        CLI để kết nối CDP và tìm kiếm tab hiện tại đang active.
+        """
+        port = 9222
+        if not self.context:
+            from socialpeta_downloader.core import SocialPetaDownloaderCore
+            self.context = SocialPetaDownloaderCore(skip_db_init=True)
+            
+        print(f"[*] Bước 1: Kiểm tra và đảm bảo cổng debug {port}...")
+        if not self.context.chrome_service.ensure_chrome_debug_port(port):
+            print(f"[-] LỖI: Không thể kết nối tới Chrome debug port {port}.")
+            return
+
+        print("[*] Bước 2: Kết nối CDP và tìm kiếm tab hiện tại đang active...")
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+            except Exception as e:
+                print(f"[-] LỖI: Không thể kết nối tới Chrome qua CDP: {e}")
+                return
+                
+            context = browser.contexts[0]
+            
+            # Thao tác phụ để kích hoạt context (nếu cần)
+            try:
+                temp_page = context.new_page()
+                temp_page.close()
+            except Exception:
+                pass
+                
+            current_page = None
+            socialpeta_pages = []
+            
+            for page in context.pages:
+                url = page.url
+                if url and is_socialpeta_url(url):
+                    socialpeta_pages.append(page)
+                    try:
+                        # Kiểm tra xem trang có đang hiển thị tích cực không
+                        visibility = page.evaluate("document.visibilityState")
+                        if visibility == "visible":
+                            current_page = page
+                            break
+                    except Exception:
+                        pass
+                        
+            # Nếu không tìm thấy tab 'visible' (ví dụ trình duyệt đang bị thu nhỏ),
+            # tự động lấy tab đầu tiên làm mặc định
+            if not current_page and socialpeta_pages:
+                print("[!] Không phát hiện tab đang hiển thị trực tiếp (có thể trình duyệt đang bị ẩn/minimized).")
+                print("[*] Tự động chọn tab SocialPeta đầu tiên làm mặc định.")
+                current_page = socialpeta_pages[0]
+                
+            if not current_page:
+                print("[-] LỖI: Không tìm thấy tab SocialPeta nào đang mở.")
+                browser.close()
+                return
+                
+            try:
+                current_title = current_page.title()
+                current_url = current_page.url
+                print("\n" + "="*80)
+                print("[🎉] KẾT NỐI THÀNH CÔNG TỚI TAB HIỆN TẠI (CURRENT TAB):")
+                print(f"    - Tiêu đề : {current_title}")
+                print(f"    - URL      : {current_url}")
+                print("="*80 + "\n")
+                
+            except Exception as e:
+                print(f"[-] Có lỗi xảy ra khi giao tiếp với tab: {e}")
+            finally:
+                # Ngắt kết nối CDP an sau
+                browser.close()
+                print("[*] Đã ngắt kết nối trình duyệt an toàn.")
+
+    def run_connect_first_tab_cli(self, argv: Optional[List[str]] = None) -> None:
+        """
+        CLI để kết nối Playwright CDP vào tab đầu tiên.
+        """
+        port = 9222
+        if not self.context:
+            from socialpeta_downloader.core import SocialPetaDownloaderCore
+            self.context = SocialPetaDownloaderCore(skip_db_init=True)
+            
+        print(f"[*] Bước 1: Kiểm tra và đảm bảo cổng debug {port}...")
+        if not self.context.chrome_service.ensure_chrome_debug_port(port):
+            print(f"[-] LỖI: Không thể kết nối tới Chrome debug port {port}.")
+            return
+
+        print("[*] Bước 2: Quét tìm các tab SocialPeta đang hoạt động...")
+        active_tabs = self.detect_tabs(port)
+        if not active_tabs:
+            print("[-] LỖI: Không tìm thấy tab SocialPeta nào đang mở trên trình duyệt.")
+            print("    Vui lòng mở SocialPeta (ví dụ: trang tìm kiếm quảng cáo) trước.")
+            return
+        
+        first_tab = active_tabs[0]
+        print(f"[+] Tìm thấy tab mục tiêu: Index {first_tab['index']} - Tiêu đề: {first_tab['title']}")
+        
+        print("[*] Bước 3: Đang kết nối Playwright CDP vào tab đầu tiên...")
+        with sync_playwright() as p:
+            browser, page = self.connect_to_active_tab(p, port)
+            if not page:
+                print("[-] LỖI: Không thể liên kết hoặc kết nối CDP tới tab hoạt động.")
+                return
+                
+            try:
+                # Lấy thông tin tiêu đề và URL thực tế từ tab để kiểm chứng
+                current_title = page.title()
+                current_url = page.url
+                print("\n" + "="*80)
+                print("[🎉] KẾT NỐI THÀNH CÔNG TỚI TAB:")
+                print(f"    - Tiêu đề hiện tại : {current_title}")
+                print(f"    - URL hiện tại      : {current_url}")
+                print("="*80 + "\n")
+                
+            except Exception as e:
+                print(f"[-] Có lỗi xảy ra khi giao tiếp với tab: {e}")
+            finally:
+                browser.close()
+                print("[*] Đã ngắt kết nối trình duyệt an toàn.")
+
+    def run_list_tabs_cli(self, argv: Optional[List[str]] = None) -> None:
+        """
+        CLI để quét tìm các tab SocialPeta đang mở.
+        """
+        port = 9222
+        if not self.context:
+            from socialpeta_downloader.core import SocialPetaDownloaderCore
+            self.context = SocialPetaDownloaderCore(skip_db_init=True)
+            
+        print(f"[*] Đang quét tìm các tab SocialPeta đang mở trên Chrome debug port {port}...")
+        if not self.context.chrome_service.ensure_chrome_debug_port(port):
+            print(f"[-] LỖI: Không thể kết nối tới Chrome debug port {port}. Vui lòng đảm bảo Chrome được mở với --remote-debugging-port={port}.")
+            return
+
+        active_tabs = self.detect_tabs(port)
+        if not active_tabs:
+            print("[!] Không tìm thấy tab SocialPeta nào đang mở.")
+            print("    Vui lòng mở SocialPeta trên Chrome (ví dụ: các trang tìm kiếm quảng cáo).")
+            return
+            
+        print(f"[+] Tìm thấy {len(active_tabs)} tab SocialPeta đang hoạt động:")
+        print("-" * 80)
+        for tab in active_tabs:
+            print(f"Index: {tab['index']}")
+            print(f"Title: {tab['title']}")
+            print(f"URL  : {tab['url']}")
+            print(f"ID   : {tab['tab_id']}")
+            print("-" * 80)
+

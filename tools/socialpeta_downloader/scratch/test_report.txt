@@ -1,0 +1,19 @@
+==========================================================================================
+| Module Name                    | Syntax/Import Check       | Execution Test            |
+==========================================================================================
+| clear_session                  | PASS                      | PASS                      |
+| click_youtube_icons            | PASS                      | N/A                       |
+| connect_current_tab            | PASS                      | PASS                      |
+| connect_first_tab              | PASS                      | PASS                      |
+| download_images                | PASS                      | PASS                      |
+| download_video_youtube_only    | PASS                      | PASS                      |
+| download_videos_not_youtube    | PASS                      | PASS                      |
+| filter_youtube_creatives       | PASS                      | PASS                      |
+| get_current_page               | PASS                      | PASS                      |
+| list_tabs                      | PASS                      | PASS                      |
+| page_navigation                | PASS                      | N/A                       |
+| run_crawler                    | PASS                      | N/A                       |
+| scrape_current_page_yt         | PASS                      | N/A                       |
+| scrape_pages_1_to_10_yt        | PASS                      | N/A                       |
+| scrape_youtube_to_csv          | PASS                      | N/A                       |
+==========================================================================================

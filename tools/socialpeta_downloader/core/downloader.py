@@ -618,3 +618,307 @@ class DownloaderService:
             if self.context.download_semaphore.value != recommended:
                 self.context.download_semaphore.set_value(recommended)
             time.sleep(5)
+
+    def run_download_images_cli(self, argv: Optional[list] = None) -> None:
+        """
+        CLI để tải ảnh song song từ file CSV.
+        """
+        import csv
+        import re
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        modules_dir = os.path.join(script_dir, "modules")
+        csv_path = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
+        output_dir = os.path.join(modules_dir, "download_images")
+        
+        print("=" * 80)
+        print("PARALLEL IMAGE ONLY DOWNLOADER")
+        print(f"Source CSV : {csv_path}")
+        print(f"Output Dir : {output_dir}")
+        print("=" * 80)
+        
+        if not os.path.exists(csv_path):
+            print(f"[-] Error: CSV file does not exist at {csv_path}")
+            return
+            
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Read and parse CSV
+        rows = []
+        try:
+            with open(csv_path, mode="r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+        except Exception as e:
+            print(f"[-] Error reading CSV: {e}")
+            return
+            
+        print(f"[+] Total rows found in CSV: {len(rows)}")
+        
+        # Filter for unique image URLs
+        to_download = []
+        seen_urls = set()
+        
+        for row in rows:
+            img_url = row.get("image_url", "").strip()
+            if img_url and img_url.startswith("http"):
+                if img_url not in seen_urls:
+                    seen_urls.add(img_url)
+                    to_download.append(row)
+                    
+        total_images = len(to_download)
+        print(f"[+] Found {total_images} unique image URLs to download.")
+        
+        if total_images == 0:
+            print("[*] No images to download. Exiting.")
+            return
+            
+        success_count = 0
+        fail_count = 0
+        skip_count = 0
+        
+        max_workers = 20
+        print(f"[+] Starting download with {max_workers} parallel workers...")
+        print("-" * 80)
+        
+        def _sanitize(app_name):
+            if not app_name:
+                return "UnknownApp"
+            cleaned = re.sub(r'[^\w\s-]', '', app_name)
+            cleaned = re.sub(r'\s+', '_', cleaned).strip()
+            return cleaned if cleaned else "UnknownApp"
+
+        def _download_img_task(idx, item):
+            ad_id = item.get("ad_id", "unknown").strip()
+            app_name = item.get("app_name", "UnknownApp").strip()
+            img_url = item["image_url"].strip()
+            
+            ext = ".jpg"
+            url_path = img_url.split("?")[0]
+            match_ext = re.search(r'\.(\w{3,4})$', url_path)
+            if match_ext:
+                ext = f".{match_ext.group(1)}"
+                
+            cleaned_app = _sanitize(app_name)
+            final_filename = f"{cleaned_app}_{ad_id}{ext}"
+            final_path = os.path.join(output_dir, final_filename)
+            
+            if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+                return "skip", final_filename, img_url
+                
+            print(f"[{idx}/{total_images}] Downloading: {final_filename}...")
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            temp_path = final_path + ".tmp"
+            try:
+                response = requests.get(img_url, headers=headers, stream=True, timeout=20)
+                response.raise_for_status()
+                if response.raw and hasattr(response.raw, "connection") and response.raw.connection:
+                    try:
+                        response.raw.connection.sock.settimeout(20.0)
+                    except Exception:
+                        pass
+                with open(temp_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                if os.path.exists(final_path):
+                    os.remove(final_path)
+                os.rename(temp_path, final_path)
+                return "success", final_filename, img_url
+            except Exception as e:
+                print(f"    [ERROR] Download failed for {img_url}: {e}")
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+                return "fail", final_filename, img_url
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_download_img_task, index, item): item 
+                for index, item in enumerate(to_download, 1)
+            }
+            
+            for future in as_completed(futures):
+                try:
+                    status, filename, url = future.result()
+                    if status == "success":
+                        success_count += 1
+                    elif status == "skip":
+                        skip_count += 1
+                    else:
+                        fail_count += 1
+                except Exception as e:
+                    print(f"[-] Thread execution error: {e}")
+                    fail_count += 1
+                    
+        print("\n" + "=" * 80)
+        print("DOWNLOAD COMPLETED SUMMARY")
+        print(f"Total Images processed : {total_images}")
+        print(f"Successfully downloaded: {success_count}")
+        print(f"Skipped (already exist): {skip_count}")
+        print(f"Failed downloads       : {fail_count}")
+        print("=" * 80)
+
+    def run_download_videos_not_youtube_cli(self, argv: Optional[list] = None) -> None:
+        """
+        CLI để tải video CDN trực tiếp (không phải Youtube) từ file CSV.
+        """
+        import csv
+        import re
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        modules_dir = os.path.join(script_dir, "modules")
+        csv_path = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
+        output_dir = os.path.join(modules_dir, "download_videos_not_youtube")
+        
+        print("=" * 80)
+        print("PARALLEL NON-YOUTUBE VIDEO DOWNLOADER")
+        print(f"Source CSV : {csv_path}")
+        print(f"Output Dir : {output_dir}")
+        print("=" * 80)
+        
+        if not os.path.exists(csv_path):
+            print(f"[-] Error: CSV file does not exist at {csv_path}")
+            return
+            
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Read and parse CSV
+        rows = []
+        try:
+            with open(csv_path, mode="r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+        except Exception as e:
+            print(f"[-] Error reading CSV: {e}")
+            return
+            
+        print(f"[+] Total rows found in CSV: {len(rows)}")
+        
+        # Filter for unique non-YouTube video URLs
+        to_download = []
+        seen_urls = set()
+        
+        def _is_yt(url):
+            if not url:
+                return False
+            u = url.lower()
+            return "youtube.com" in u or "youtu.be" in u
+
+        for row in rows:
+            video_url = row.get("video_url", "").strip()
+            youtube_url = row.get("youtube_url", "").strip()
+            
+            if _is_yt(video_url) or _is_yt(youtube_url):
+                continue
+                
+            if video_url and video_url.startswith("http"):
+                if video_url not in seen_urls:
+                    seen_urls.add(video_url)
+                    to_download.append(row)
+                    
+        total_videos = len(to_download)
+        print(f"[+] Found {total_videos} unique non-YouTube video URLs to download.")
+        
+        if total_videos == 0:
+            print("[*] No non-YouTube videos to download. Exiting.")
+            return
+            
+        success_count = 0
+        fail_count = 0
+        skip_count = 0
+        
+        max_workers = 10
+        print(f"[+] Starting download with {max_workers} parallel workers...")
+        print("-" * 80)
+        
+        def _sanitize(app_name):
+            if not app_name:
+                return "UnknownApp"
+            cleaned = re.sub(r'[^\w\s-]', '', app_name)
+            cleaned = re.sub(r'\s+', '_', cleaned).strip()
+            return cleaned if cleaned else "UnknownApp"
+
+        def _download_vid_task(idx, item):
+            ad_id = item.get("ad_id", "unknown").strip()
+            app_name = item.get("app_name", "UnknownApp").strip()
+            video_url = item["video_url"].strip()
+            
+            ext = ".mp4"
+            url_path = video_url.split("?")[0]
+            match_ext = re.search(r'\.(\w{3,4})$', url_path)
+            if match_ext:
+                ext = f".{match_ext.group(1)}"
+                
+            cleaned_app = _sanitize(app_name)
+            final_filename = f"{cleaned_app}_{ad_id}{ext}"
+            final_path = os.path.join(output_dir, final_filename)
+            
+            if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+                return "skip", final_filename, video_url
+                
+            print(f"[{idx}/{total_videos}] Downloading: {final_filename}...")
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            temp_path = final_path + ".tmp"
+            try:
+                response = requests.get(video_url, headers=headers, stream=True, timeout=20)
+                response.raise_for_status()
+                if response.raw and hasattr(response.raw, "connection") and response.raw.connection:
+                    try:
+                        response.raw.connection.sock.settimeout(20.0)
+                    except Exception:
+                        pass
+                with open(temp_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                if os.path.exists(final_path):
+                    os.remove(final_path)
+                os.rename(temp_path, final_path)
+                return "success", final_filename, video_url
+            except Exception as e:
+                print(f"    [ERROR] Download failed for {video_url}: {e}")
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+                return "fail", final_filename, video_url
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_download_vid_task, index, item): item 
+                for index, item in enumerate(to_download, 1)
+            }
+            
+            for future in as_completed(futures):
+                try:
+                    status, filename, url = future.result()
+                    if status == "success":
+                        success_count += 1
+                    elif status == "skip":
+                        skip_count += 1
+                    else:
+                        fail_count += 1
+                except Exception as e:
+                    print(f"[-] Thread execution error: {e}")
+                    fail_count += 1
+                    
+        print("\n" + "=" * 80)
+        print("DOWNLOAD COMPLETED SUMMARY")
+        print(f"Total Videos processed : {total_videos}")
+        print(f"Successfully downloaded: {success_count}")
+        print(f"Skipped (already exist): {skip_count}")
+        print(f"Failed downloads       : {fail_count}")
+        print("=" * 80)
+

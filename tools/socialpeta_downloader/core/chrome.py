@@ -146,3 +146,15 @@ class ChromeService:
         Không khởi chạy thêm cửa sổ phụ nào.
         """
         return self.ensure_chrome_debug_port(port)
+
+    def run_start_chrome_cli(self, argv: Optional[list] = None) -> None:
+        """
+        Giao diện dòng lệnh (CLI) để khởi động Google Chrome với cổng debug 9222.
+        """
+        print("[*] Đang khởi động Google Chrome với cổng debug 9222...")
+        success = self.ensure_chrome_debug_port(9222)
+        if success:
+            print("[+] Khởi động Chrome debug thành công trên cổng 9222.")
+        else:
+            print("[-] Khởi động Chrome debug thất bại.")
+

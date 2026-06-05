@@ -833,6 +833,115 @@ class UtilsService:
         """
         return select_file(initial_dir, title, filetypes)
 
+    def run_get_current_page_cli(self, argv: Optional[list] = None) -> None:
+        """
+        CLI để lấy số trang hiện tại của tab SocialPeta đang hoạt động.
+        """
+        from playwright.sync_api import sync_playwright
+        port = 9222
+        
+        with sync_playwright() as p:
+            print(f"[*] Đang kết nối tới trình duyệt Chrome qua CDP cổng {port}...")
+            browser, page = self.context.connect_to_active_tab(p, port)
+            if not page:
+                print("[-] Không tìm thấy tab SocialPeta đang hoạt động hoặc không kết nối được.")
+                return
+                
+            print("[*] Đang đọc vị trí trang hiện tại từ giao diện UI...")
+            current_page = self.get_current_page(page)
+            print(f"\n[🚀] BẠN ĐANG Ở TRANG: {current_page}\n")
+            
+            browser.close()
+
+    def run_page_navigation_cli(self, argv: Optional[list] = None) -> None:
+        """
+        CLI kiểm tra phân trang tự động (điều hướng từ trang 1->20 rồi quay về 2).
+        """
+        from playwright.sync_api import sync_playwright
+        port = 9222
+        
+        print("[*] Đang kết nối tới Chrome debug port...")
+        if not self.context.chrome_service.ensure_chrome_debug_port(port):
+            print("[-] Không kết nối được Chrome debug port 9222. Vui lòng mở Chrome debug trước.")
+            return
+            
+        print("[*] Kích hoạt và đưa Chrome lên màn hình chính (foreground)...")
+        self.bring_chrome_to_foreground()
+        
+        print("[*] Đang quét tìm các tab SocialPeta hoạt động...")
+        active_tabs = self.context.detect_tabs(port)
+        if not active_tabs:
+            print("[-] Không tìm thấy tab SocialPeta nào. Vui lòng mở trang và đăng nhập trước.")
+            return
+            
+        tab_info = active_tabs[0]
+        tab_index = tab_info["index"]
+        tab_id = tab_info["tab_id"]
+        print(f"[+] Đã phát hiện Tab [{tab_index}]: {tab_info['title']}")
+        
+        def navigate_to_page(page, page_num: int) -> bool:
+            try:
+                page.keyboard.press("End")
+                time.sleep(1.0)
+            except Exception:
+                try:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                except Exception:
+                    pass
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
+            if page_num <= 5:
+                success = self._click_page_button(page, page_num)
+            else:
+                success = self._jump_to_page(page, page_num)
+            return success
+
+        with sync_playwright() as p:
+            print(f"[*] Đang kết nối Playwright qua CDP cổng {port}...")
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+            context = browser.contexts[0]
+            
+            # Ép đồng bộ hóa danh sách target của Playwright
+            temp_page = context.new_page()
+            temp_page.close()
+            
+            # Tìm page object qua tab_id
+            page = self.context.tab_scanner._find_page_by_id(context, tab_id)
+            if not page:
+                print("[-] Không thể tìm thấy đối tượng Page tương ứng với tab.")
+                return
+                
+            page.set_default_timeout(10000)
+            page.bring_to_front()
+            
+            # === CHU KỲ 1: DI CHUYỂN TỪ TRANG 1 -> TRANG 20 ===
+            print("\n=== [1] Bắt đầu điều hướng từ Trang 1 đến Trang 20 ===")
+            for p_num in range(1, 21):
+                print(f"[*] Đang chuyển đến Trang {p_num}...")
+                ok = navigate_to_page(page, p_num)
+                if ok:
+                    print(f"[+] Thành công chuyển sang Trang {p_num}")
+                    time.sleep(3.0)  # Chờ dữ liệu tải
+                else:
+                    print(f"[-] Thất bại chuyển sang Trang {p_num}")
+                    
+            # === CHU KỲ 2: DI CHUYỂN TỪ TRANG 20 -> TRANG 2 ===
+            print("\n=== [2] Bắt đầu quay ngược từ Trang 20 về Trang 2 ===")
+            for p_num in range(20, 1, -1):
+                print(f"[*] Đang chuyển ngược về Trang {p_num}...")
+                ok = navigate_to_page(page, p_num)
+                if ok:
+                    print(f"[+] Thành công chuyển sang Trang {p_num}")
+                    time.sleep(3.0)  # Chờ dữ liệu tải
+                else:
+                    print(f"[-] Thất bại chuyển sang Trang {p_num}")
+                    
+            print("\n[+] Đã hoàn tất quy trình test chuyển trang.")
+            browser.close()
+
+
 
 # hàm đã hoạt động rồi đừng động vào
 def _fix_tcl_tk_env():
