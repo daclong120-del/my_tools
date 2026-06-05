@@ -862,10 +862,14 @@ class YoutubeService:
             browser.close()
             print(f"\n[🏁] Xử lý xong {len(results)} quảng cáo YouTube trên trang.")
 
-    def run_filter_youtube_creatives_cli(self, argv: Optional[list] = None) -> None:
+    def run_filter_youtube_creatives_cli(
+        self,
+        argv: Optional[list] = None,
+        input_file: Optional[str] = None,
+        output_file: Optional[str] = None
+    ) -> None:
         """
         CLI để lọc dữ liệu CSV thô chỉ lấy các dòng chứa link YouTube.
-        Tương tự logic cũ trong filter_youtube_creatives.py.
         """
         import csv
         
@@ -873,25 +877,40 @@ class YoutubeService:
         modules_dir = os.path.join(core_dir, "modules")
         
         # Mặc định file
-        input_file = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
-        output_file = os.path.join(modules_dir, "scraped_creatives_youtube_only.csv")
+        default_input = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
+        default_output = os.path.join(modules_dir, "scraped_creatives_youtube_only.csv")
         
-        # Xử lý argv nếu có
-        if argv and len(argv) > 1:
-            input_file = argv[1]
-        if argv and len(argv) > 2:
-            output_file = argv[2]
+        argv_args = []
+        if argv:
+            if len(argv) > 0 and argv[0].endswith(".py"):
+                argv_args = argv[1:]
+            else:
+                argv_args = argv
+                
+        inp = input_file
+        if not inp:
+            if len(argv_args) > 0:
+                inp = argv_args[0]
+            else:
+                inp = default_input
+                
+        out = output_file
+        if not out:
+            if len(argv_args) > 1:
+                out = argv_args[1]
+            else:
+                out = default_output
             
-        if not os.path.exists(input_file):
-            print(f"[-] Input file not found: {input_file}")
+        if not os.path.exists(inp):
+            print(f"[-] Input file not found: {inp}")
             return
             
-        print(f"[*] Reading data from: {input_file}...")
+        print(f"[*] Reading data from: {inp}...")
         
         filtered_rows = []
         total_rows = 0
         
-        with open(input_file, mode='r', encoding='utf-8-sig') as f:
+        with open(inp, mode='r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
             fieldnames = reader.fieldnames
             
@@ -903,14 +922,14 @@ class YoutubeService:
         print(f"[*] Total rows scanned: {total_rows}")
         print(f"[*] Found {len(filtered_rows)} rows containing a YouTube link.")
         
-        print(f"[*] Writing results to: {output_file}...")
-        os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
-        with open(output_file, mode='w', encoding='utf-8-sig', newline='') as f:
+        print(f"[*] Writing results to: {out}...")
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        with open(out, mode='w', encoding='utf-8-sig', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(filtered_rows)
             
-        print(f"[+] Done! Created file: {output_file}")
+        print(f"[+] Done! Created file: {out}")
 
     def run_download_video_youtube_only_cli(
         self,

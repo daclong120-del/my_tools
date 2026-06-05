@@ -79,9 +79,10 @@ class SocialPetaDownloaderCore:
             except Exception as ex:
                 print(f"[-] Lỗi nghiêm trọng: Không thể tạo thư mục mặc định {default_dir}: {ex}")
 
-        if hasattr(self, "session_service") and self.session_service:
-            self.session_service.init_db()
-            self.session_service.migrate_old_data(old_download_dir)
+        if not getattr(self, "skip_db_init", False):
+            if hasattr(self, "session_service") and self.session_service:
+                self.session_service.init_db()
+                self.session_service.migrate_old_data(old_download_dir)
 
     def load_config(self):
         import json
@@ -141,6 +142,7 @@ class SocialPetaDownloaderCore:
         return results
 
     def __init__(self, skip_db_init: bool = False):
+        self.skip_db_init = skip_db_init
         self.session_dir = settings.SESSION_DIR
         self.download_mode = "all"
         self.quiet_mode = False

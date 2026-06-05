@@ -13,10 +13,10 @@ def main():
     
     # Xác định file đầu vào và đầu ra từ tham số dòng lệnh hoặc mặc định
     input_file = sys.argv[1] if len(sys.argv) > 1 else os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
-    output_file = sys.argv[2] if len(sys.argv) > 2 else os.path.join(modules_dir, "scraped_creatives_youtube_only.csv")
+    output_file = sys.argv[2] if len(sys.argv) > 2 else os.path.join(modules_dir, "scraped_creatives_image_only.csv")
     
     core = SocialPetaDownloaderCore(skip_db_init=True)
-    core.youtube_service.run_filter_youtube_creatives_cli(input_file=input_file, output_file=output_file)
+    core.downloader_service.run_filter_image_creatives_cli(input_file=input_file, output_file=output_file)
 
 if __name__ == "__main__":
     main()

@@ -1005,3 +1005,155 @@ class DownloaderService:
         _log("info", f"Failed downloads       : {fail_count}")
         _log("info", "=" * 80)
 
+    def run_filter_image_creatives_cli(
+        self,
+        argv: Optional[list] = None,
+        input_file: Optional[str] = None,
+        output_file: Optional[str] = None
+    ) -> None:
+        """
+        CLI để lọc dữ liệu CSV thô chỉ lấy các dòng chứa hình ảnh.
+        """
+        import csv
+        
+        core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        modules_dir = os.path.join(core_dir, "modules")
+        
+        # Mặc định file
+        default_input = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
+        default_output = os.path.join(modules_dir, "scraped_creatives_image_only.csv")
+        
+        argv_args = []
+        if argv:
+            if len(argv) > 0 and argv[0].endswith(".py"):
+                argv_args = argv[1:]
+            else:
+                argv_args = argv
+                
+        inp = input_file
+        if not inp:
+            if len(argv_args) > 0:
+                inp = argv_args[0]
+            else:
+                inp = default_input
+                
+        out = output_file
+        if not out:
+            if len(argv_args) > 1:
+                out = argv_args[1]
+            else:
+                out = default_output
+            
+        if not os.path.exists(inp):
+            print(f"[-] Input file not found: {inp}")
+            return
+            
+        print(f"[*] Reading data from: {inp}...")
+        
+        filtered_rows = []
+        total_rows = 0
+        
+        with open(inp, mode='r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            
+            for row in reader:
+                total_rows += 1
+                media_type = row.get("media_type", "").strip().lower()
+                img_url = row.get("image_url", "").strip()
+                video_url = row.get("video_url", "").strip()
+                youtube_url = row.get("youtube_url", "").strip()
+                
+                # Điều kiện lọc: media_type là image, hoặc có image_url nhưng không phải video
+                is_youtube = media_type in ("youtube_video", "youtube_click_required") or youtube_url
+                is_cdn_video = media_type == "video" or (video_url and not youtube_url)
+                if media_type == "image" or (img_url and not is_youtube and not is_cdn_video):
+                    filtered_rows.append(row)
+                    
+        print(f"[*] Total rows scanned: {total_rows}")
+        print(f"[*] Found {len(filtered_rows)} rows containing an image.")
+        
+        print(f"[*] Writing results to: {out}...")
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        with open(out, mode='w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(filtered_rows)
+            
+        print(f"[+] Successfully filtered images. Saved to: {out}")
+
+    def run_filter_cdn_video_creatives_cli(
+        self,
+        argv: Optional[list] = None,
+        input_file: Optional[str] = None,
+        output_file: Optional[str] = None
+    ) -> None:
+        """
+        CLI để lọc dữ liệu CSV thô chỉ lấy các dòng chứa video CDN trực tiếp (không phải YouTube).
+        """
+        import csv
+        
+        core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        modules_dir = os.path.join(core_dir, "modules")
+        
+        # Mặc định file
+        default_input = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
+        default_output = os.path.join(modules_dir, "scraped_creatives_cdn_video_only.csv")
+        
+        argv_args = []
+        if argv:
+            if len(argv) > 0 and argv[0].endswith(".py"):
+                argv_args = argv[1:]
+            else:
+                argv_args = argv
+                
+        inp = input_file
+        if not inp:
+            if len(argv_args) > 0:
+                inp = argv_args[0]
+            else:
+                inp = default_input
+                
+        out = output_file
+        if not out:
+            if len(argv_args) > 1:
+                out = argv_args[1]
+            else:
+                out = default_output
+            
+        if not os.path.exists(inp):
+            print(f"[-] Input file not found: {inp}")
+            return
+            
+        print(f"[*] Reading data from: {inp}...")
+        
+        filtered_rows = []
+        total_rows = 0
+        
+        with open(inp, mode='r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            
+            for row in reader:
+                total_rows += 1
+                media_type = row.get("media_type", "").strip().lower()
+                video_url = row.get("video_url", "").strip()
+                youtube_url = row.get("youtube_url", "").strip()
+                
+                # Điều kiện lọc: media_type là video, hoặc có video_url nhưng không phải youtube
+                is_youtube = media_type in ("youtube_video", "youtube_click_required") or youtube_url
+                if media_type == "video" or (video_url and not is_youtube):
+                    filtered_rows.append(row)
+                    
+        print(f"[*] Total rows scanned: {total_rows}")
+        print(f"[*] Found {len(filtered_rows)} rows containing a CDN video.")
+        
+        print(f"[*] Writing results to: {out}...")
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        with open(out, mode='w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(filtered_rows)
+            
+        print(f"[+] Successfully filtered CDN videos. Saved to: {out}")
+
