@@ -1,9 +1,10 @@
 # SocialPeta Downloader
 
 > Tổng hợp kiến thức về công cụ tự động hóa tải video SocialPeta trong dự án.
-> Cập nhật lần cuối: 2026-06-04
+> Cập nhật lần cuối: 2026-06-05
 
 ---
+
 
 ## Architecture
 
@@ -42,7 +43,13 @@
 - **Chi tiết**: Thiết kế giao diện CLI tương tác (TUI) bằng `InquirerPy` (sử dụng phím mũi tên) kết hợp Live Dashboard của `rich` để hiển thị trực quan trạng thái tải/cào đa luồng. Hỗ trợ cơ chế dừng khẩn cấp bằng phím tắt `Ctrl + Q` để ngắt luồng workers an toàn và dọn dẹp các tệp tạm trên đĩa.
 - **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/cli.py`
 
+### Native Explorer Dialog Integration in Core Utility
+- **Ngày**: 2026-06-05
+- **Chi tiết**: Tích hợp trực tiếp hộp thoại chọn thư mục/tập tin gốc (Native Explorer Dialog) của hệ điều hành vào lớp `UtilsService` và cấp module của `utils.py`. Sử dụng thư viện tiêu chuẩn `tkinter.filedialog` với các thiết lập ẩn cửa sổ root (`root.withdraw()`) và đưa hộp thoại lên trên cùng (`root.wm_attributes("-topmost", 1)`) để tăng trải nghiệm người dùng, tránh phụ thuộc vào các thư viện bên thứ ba và dễ dàng tái sử dụng cho các script CLI/TUI khác.
+- **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`
+
 ---
+
 
 ## Bugs & Solutions
 
@@ -218,8 +225,8 @@
 - **Ngày**: 2026-06-02
 - **Vấn đề**: Khi mở cửa sổ chọn Folder Explorer bằng `tkinter` trên Windows, chương trình báo lỗi thiếu tệp cấu hình `init.tcl` (`Can't find a usable init.tcl`).
 - **Root cause**: Trình khởi tạo môi trường ảo Python trên Windows không tự động sao chép hoặc liên kết chính xác thư mục thư viện Tcl từ cài đặt gốc.
-- **Fix**: Sao chép thư mục `tcl` từ Python gốc trên hệ thống (ví dụ: `Python313/tcl`) trực tiếp vào thư mục gốc của `.venv` của dự án (`.venv/tcl`).
-- **Files liên quan**: N/A
+- **Fix**: Thêm hàm bổ trợ `_fix_tcl_tk_env()` trong `core/utils.py` để tự động phát hiện môi trường ảo (`sys.prefix != sys.base_prefix`) trên Windows, tìm thư mục `tcl` trong Python gốc (`sys.base_prefix`) và tự động nạp các biến môi trường `TCL_LIBRARY` và `TK_LIBRARY` trước khi khởi chạy Tkinter. Điều này loại bỏ hoàn toàn việc phải sao chép thư mục thủ công.
+- **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`
 
 ### Lỗi bỏ sót tải video YouTube có thời lượng 0s
 - **Ngày**: 2026-06-02
@@ -338,7 +345,15 @@
      `.\tools\socialpeta_downloader\cli\cli_v2\run.bat`
 - **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/run.bat`
 
+### Cách sử dụng hộp thoại chọn thư mục/tập tin gốc trong dự án
+- **Ngày**: 2026-06-05
+- **Bước thực hiện**:
+  1. Import hàm từ tiện ích core: `from socialpeta_downloader.core.utils import select_directory, select_file`
+  2. Gọi hàm `select_directory(initial_dir, title)` hoặc `select_file(initial_dir, title, filetypes)`. Hàm tự động xử lý ẩn màn hình Tkinter chính, hiển thị topmost và trả về đường dẫn tuyệt đối (hoặc `None` nếu người dùng hủy chọn).
+- **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`
+
 ---
+
 
 ## Patterns
 
@@ -413,7 +428,8 @@
 - **Chi tiết**: Mẫu thiết kế để xử lý quảng cáo hỗ trợ nhiều nguồn đa phương tiện khác nhau (ví dụ: liên kết CDN tải trực tiếp và liên kết YouTube chính chủ). Ta thực hiện phân loại và đưa nguồn có độ ưu tiên cao nhất (YouTube) vào xử lý trước bằng hàng đợi. Đồng thời, khi bắt được các nguồn có độ ưu tiên thấp hơn (CDN) trong quá trình cào, ta không ghi đè trực tiếp để tránh mất dữ liệu nguồn chính, mà lưu tạm thông tin CDN vào một thư mục đệm. Khi luồng cào của tab kết thúc, ta thực hiện quét dọn thư mục đệm này và chỉ xếp hàng tải các CDN dự phòng nếu nguồn ưu tiên chính (YouTube) bị trích xuất thất bại.
 - **Files liên quan**: `tools/socialpeta_downloader/core/sniffer.py`, `tools/socialpeta_downloader/core/tab_manager.py`
 
-### Direct-to-CSV Extraction bypassing SQLite (Trích xuất trực tiếp ra CSV bỏ qua SQLite)
-- **Ngày**: 2026-06-04
-- **Chi tiết**: Đối với các tiến trình cào chỉ thu thập dữ liệu thô (ví dụ: cào link YouTube ra CSV cục bộ) và không muốn lưu trữ vào SQLite DB hoặc sinh ra các file nhật ký phụ (`duplicate_audit.csv`, `download_info.csv` của Core), ta khởi tạo Core bằng cách truyền đối số `skip_db_init=True` và tránh gọi phương thức `core.update_download_dir()` (vì phương thức này sẽ tự động khởi động kết nối SQLite). Dữ liệu sau khi trích xuất từ trang web sẽ được lưu trực tiếp vào tệp CSV đích thông qua module `csv` chuẩn của Python.
-- **Files liên quan**: `tools/socialpeta_downloader/test/scrape_youtube_to_csv.py`, `tools/socialpeta_downloader/core/__init__.py`
+### Topmost Non-Blocking Tkinter Dialog Pattern
+- **Ngày**: 2026-06-05
+- **Chi tiết**: Khi sử dụng Tkinter cho các ứng dụng console/TUI hoặc API để chọn file/folder mà không muốn hiển thị cửa sổ Tkinter trống phía sau, ta áp dụng mẫu thiết kế: (1) Tạo `root = tk.Tk()`, (2) Gọi `root.withdraw()` để ẩn cửa sổ chính, (3) Gọi `root.wm_attributes("-topmost", 1)` để đảm bảo hộp thoại nổi lên trên các cửa sổ khác, (4) Thực hiện hội thoại chọn và gọi `root.destroy()` ngay lập tức để giải phóng tài nguyên.
+- **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`
+

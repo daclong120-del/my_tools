@@ -758,6 +758,8 @@ class YoutubeService:
                     urls = re.findall(r'https?://[^\s<>"]*?(?:youtu|youtube-nocookie)[^\s<>"]*', body_text)
                     if urls:
                         found_url = urls[0].strip()
+                        # Loại bỏ các dấu chấm hoặc ký tự ellipsis ở cuối link nếu có
+                        found_url = re.sub(r'[\s.…]+$', '', found_url)
                 except Exception:
                     pass
             

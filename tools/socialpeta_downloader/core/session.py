@@ -688,18 +688,66 @@ class SessionService:
                 import traceback
                 self.context.log("error", f"[-] Error writing to custom CSV: {e}\n{traceback.format_exc()}")
 
+    def _resolve_paths(self):
+        """
+        Phân giải các đường dẫn cần thiết để dọn dẹp.
+        Nếu có context thì dùng context, nếu không thì tự phân giải từ settings và config.json.
+        """
+        if self.context:
+            return {
+                "db_path": self.context.get_db_path(),
+                "temp_queue_dir": self.context.temp_queue_dir,
+                "temp_download_dir": self.context.temp_download_dir,
+                "csv_path": self.context.csv_path,
+                "audit_csv_path": self.context.audit_csv_path
+            }
+        
+        # Trường hợp không có context (chạy độc lập)
+        import json
+        
+        # Lấy download_dir mặc định
+        if os.name == 'nt':
+            import winreg
+            try:
+                sub_key = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub_key) as key:
+                    downloads_dir = winreg.QueryValueEx(key, "{374DE290-123F-4565-9164-39C4925E467B}")[0]
+                    download_dir = os.path.join(downloads_dir, "SocialPeta_Downloader")
+            except Exception:
+                download_dir = os.path.join(os.path.expanduser("~"), "Downloads", "SocialPeta_Downloader")
+        else:
+            download_dir = os.path.join(os.path.expanduser("~"), "Downloads", "SocialPeta_Downloader")
+            
+        # Cập nhật từ config.json nếu có
+        config_path = os.path.join(settings.DATA_DIR, "config.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                stored_dir = cfg.get("download_dir")
+                if stored_dir:
+                    download_dir = stored_dir
+            except Exception:
+                pass
+                
+        return {
+            "db_path": os.path.join(download_dir, "db.sqlite3"),
+            "temp_queue_dir": os.path.join(download_dir, ".temp"),
+            "temp_download_dir": os.path.join(download_dir, ".temp_download"),
+            "csv_path": os.path.join(download_dir, "download_info.csv"),
+            "audit_csv_path": os.path.join(download_dir, "duplicate_audit.csv")
+        }
+
     def clear_session_data(self, clear_history: bool = True):
         """
         Dọn dẹp cơ sở dữ liệu SQLite, xóa file JSON tạm thời và thư mục tải tạm.
         Nếu clear_history = True: xóa trắng lịch sử CSV, ngược lại chỉ làm sạch SQLite/temp files.
         """
-        if not self.context:
-            return
-            
         import sqlite3
         import shutil
         
-        db_path = self.context.get_db_path()
+        paths = self._resolve_paths()
+        db_path = paths["db_path"]
         
         # 1. Truncate SQLite tables
         if os.path.exists(db_path):
@@ -715,12 +763,15 @@ class SessionService:
                 print("[+] SQLite tables cleared and database vacuumed.")
             except Exception as e:
                 import traceback
-                self.context.log("error", f"[-] Error clearing SQLite tables: {e}\n{traceback.format_exc()}")
+                if self.context:
+                    self.context.log("error", f"[-] Error clearing SQLite tables: {e}\n{traceback.format_exc()}")
+                else:
+                    print(f"[-] Error clearing SQLite tables: {e}\n{traceback.format_exc()}")
             finally:
                 conn.close()
                 
         # 2. Clear temp JSON directory (.temp/)
-        temp_queue_dir = self.context.temp_queue_dir
+        temp_queue_dir = paths["temp_queue_dir"]
         if os.path.exists(temp_queue_dir):
             try:
                 for item in os.listdir(temp_queue_dir):
@@ -731,10 +782,13 @@ class SessionService:
                         os.remove(item_path)
                 print("[+] Temp queue files (.temp/) removed.")
             except Exception as e:
-                self.context.log("warning", f"[-] Error clearing temp queue directory: {e}")
+                if self.context:
+                    self.context.log("warning", f"[-] Error clearing temp queue directory: {e}")
+                else:
+                    print(f"[-] Error clearing temp queue directory: {e}")
                 
         # 3. Clear temp downloads (.temp_download/)
-        temp_download_dir = self.context.temp_download_dir
+        temp_download_dir = paths["temp_download_dir"]
         if os.path.exists(temp_download_dir):
             try:
                 for item in os.listdir(temp_download_dir):
@@ -745,11 +799,14 @@ class SessionService:
                         os.remove(item_path)
                 print("[+] Temp download files (.temp_download/) removed.")
             except Exception as e:
-                self.context.log("warning", f"[-] Error clearing temp download directory: {e}")
+                if self.context:
+                    self.context.log("warning", f"[-] Error clearing temp download directory: {e}")
+                else:
+                    print(f"[-] Error clearing temp download directory: {e}")
                 
         # 4. Truncate CSV files if needed
         if clear_history:
-            csv_path = self.context.csv_path
+            csv_path = paths["csv_path"]
             if os.path.exists(csv_path):
                 try:
                     fieldnames = ["ad_id", "video_name", "media_type", "video_url", "youtube_url",
@@ -761,10 +818,13 @@ class SessionService:
                         writer.writerow(fieldnames)
                     print(f"[+] download_info.csv truncated: {csv_path}")
                 except Exception as e:
-                    self.context.log("warning", f"[-] Error truncating download_info.csv: {e}")
+                    if self.context:
+                        self.context.log("warning", f"[-] Error truncating download_info.csv: {e}")
+                    else:
+                        print(f"[-] Error truncating download_info.csv: {e}")
                     
         # Always clear/reset duplicate_audit.csv
-        audit_csv_path = self.context.audit_csv_path
+        audit_csv_path = paths["audit_csv_path"]
         if os.path.exists(audit_csv_path):
             try:
                 fieldnames = ["timestamp", "ad_id", "app_name", "duplicate_ad_id", "reason"]
@@ -773,18 +833,54 @@ class SessionService:
                     writer.writerow(fieldnames)
                 print(f"[+] duplicate_audit.csv truncated: {audit_csv_path}")
             except Exception as e:
-                self.context.log("warning", f"[-] Error truncating duplicate_audit.csv: {e}")
+                if self.context:
+                    self.context.log("warning", f"[-] Error truncating duplicate_audit.csv: {e}")
+                else:
+                    print(f"[-] Error truncating duplicate_audit.csv: {e}")
                 
         # Reset memory caches in context if available
-        if hasattr(self.context, "image_md5_cache") and isinstance(self.context.image_md5_cache, dict):
-            self.context.image_md5_cache.clear()
-        if hasattr(self.context, "item_status_cache") and isinstance(self.context.item_status_cache, dict):
-            self.context.item_status_cache.clear()
-        if hasattr(self.context, "ad_id_to_status") and isinstance(self.context.ad_id_to_status, dict):
-            self.context.ad_id_to_status.clear()
-        if hasattr(self.context, "stats") and isinstance(self.context.stats, dict):
-            with self.context.stats_lock:
-                for k in self.context.stats:
-                    self.context.stats[k] = 0
+        if self.context:
+            if hasattr(self.context, "image_md5_cache") and isinstance(self.context.image_md5_cache, dict):
+                self.context.image_md5_cache.clear()
+            if hasattr(self.context, "item_status_cache") and isinstance(self.context.item_status_cache, dict):
+                self.context.item_status_cache.clear()
+            if hasattr(self.context, "ad_id_to_status") and isinstance(self.context.ad_id_to_status, dict):
+                self.context.ad_id_to_status.clear()
+            if hasattr(self.context, "stats") and isinstance(self.context.stats, dict):
+                with self.context.stats_lock:
+                    for k in self.context.stats:
+                        self.context.stats[k] = 0
+
+    def run_clear_session_cli(self, argv=None):
+        """
+        Đóng gói giao diện dòng lệnh (CLI) để dọn dẹp session.
+        Có thể được gọi trực tiếp từ script modules/clear_session.py.
+        """
+        import argparse
+        import sys
+        
+        parser = argparse.ArgumentParser(description="Dọn dẹp phiên tải (SQLite, Cache JSON tạm thời và phân đoạn video tải tạm)")
+        parser.add_argument(
+            "--keep-history", "-k",
+            action="store_true",
+            help="Giữ lại lịch sử file CSV (download_info.csv) và bảng download_history trong SQLite"
+        )
+        
+        # Nếu truyền argv cụ thể thì dùng, không thì lấy mặc định từ sys.argv[1:]
+        args = parser.parse_args(argv if argv is not None else sys.argv[1:])
+        
+        clear_history = not args.keep_history
+        if clear_history:
+            print("[!] CẢNH BÁO: Tiến hành dọn dẹp TOÀN BỘ (xóa trắng lịch sử tải và tệp rác)...")
+        else:
+            print("[*] Chỉ dọn dẹp các tệp tạm thời và hàng đợi cache (vẫn GIỮ LẠI danh sách tệp tải thành công)...")
+            
+        try:
+            self.clear_session_data(clear_history=clear_history)
+            print("[+] Hoàn tất quá trình dọn dẹp phiên thành công!")
+        except Exception as e:
+            import traceback
+            print(f"[-] Có lỗi xảy ra trong quá trình dọn dẹp: {e}")
+            traceback.print_exc()
 
 

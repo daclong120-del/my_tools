@@ -819,5 +819,93 @@ class UtilsService:
         except Exception as e:
             self.log("error", f"[-] Lỗi khi cuộn trang: {e}")
 
+    # hàm đã hoạt động rồi đừng động vào
+    def select_directory(self, initial_dir: Optional[str] = None, title: str = "Chọn thư mục") -> Optional[str]:
+        """
+        Mở hộp thoại chọn thư mục và trả về đường dẫn tuyệt đối (hoặc None nếu hủy).
+        """
+        return select_directory(initial_dir, title)
+
+    # hàm đã hoạt động rồi đừng động vào
+    def select_file(self, initial_dir: Optional[str] = None, title: str = "Chọn file", filetypes: Optional[List[tuple]] = None) -> Optional[str]:
+        """
+        Mở hộp thoại chọn file và trả về đường dẫn tuyệt đối (hoặc None nếu hủy).
+        """
+        return select_file(initial_dir, title, filetypes)
+
+
+# hàm đã hoạt động rồi đừng động vào
+def _fix_tcl_tk_env():
+    """
+    Sửa đường dẫn thư viện Tcl/Tk cho Tkinter trong môi trường ảo (.venv) trên Windows.
+    """
+    if sys.platform.startswith('win') and sys.prefix != sys.base_prefix:
+        base_tcl_dir = os.path.join(sys.base_prefix, "tcl")
+        if os.path.exists(base_tcl_dir):
+            tcl_lib = os.path.join(base_tcl_dir, "tcl8.6")
+            tk_lib = os.path.join(base_tcl_dir, "tk8.6")
+            if os.path.exists(tcl_lib):
+                os.environ["TCL_LIBRARY"] = tcl_lib
+            if os.path.exists(tk_lib):
+                os.environ["TK_LIBRARY"] = tk_lib
+
+
+# hàm đã hoạt động rồi đừng động vào
+def select_directory(initial_dir: Optional[str] = None, title: str = "Chọn thư mục") -> Optional[str]:
+    """
+    Mở hộp thoại chọn thư mục và trả về đường dẫn tuyệt đối (hoặc None nếu hủy).
+    """
+    _fix_tcl_tk_env()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", 1)
+        
+        path = filedialog.askdirectory(
+            parent=root,
+            title=title,
+            initialdir=initial_dir or os.getcwd()
+        )
+        root.destroy()
+        if path:
+            return os.path.abspath(path)
+    except Exception:
+        pass
+    return None
+
+
+# hàm đã hoạt động rồi đừng động vào
+def select_file(initial_dir: Optional[str] = None, title: str = "Chọn file", filetypes: Optional[List[tuple]] = None) -> Optional[str]:
+    """
+    Mở hộp thoại chọn file và trả về đường dẫn tuyệt đối (hoặc None nếu hủy).
+    """
+    _fix_tcl_tk_env()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", 1)
+        
+        if filetypes is None:
+            filetypes = [("All Files", "*.*")]
+            
+        path = filedialog.askopenfilename(
+            parent=root,
+            title=title,
+            initialdir=initial_dir or os.getcwd(),
+            filetypes=filetypes
+        )
+        root.destroy()
+        if path:
+            return os.path.abspath(path)
+    except Exception:
+        pass
+    return None
+
 
 
