@@ -262,14 +262,12 @@ def run_interactive_menu():
     # Initialize core (suppress migration prints to keep console clean)
     import contextlib
     import io
-    print("[*] Đang khởi động hệ thống...", end="\r", flush=True)
     with contextlib.redirect_stdout(io.StringIO()):
         core = SocialPetaDownloaderCore(skip_db_init=True)
     
     # Auto detect Chrome status on port 9222
     chrome_service = ChromeService(context=core)
     if not chrome_service._is_chrome_cdp_active(9222):
-        print("[*] Đang khởi chạy Chrome debug (cổng 9222)...", end="\r", flush=True)
         chrome_service.ensure_chrome_debug_port(9222)
         time.sleep(2)
         
@@ -277,6 +275,7 @@ def run_interactive_menu():
     pages_limit = 5
     
     while True:
+        core.session_service.clear_session_data(clear_history=True)
         os.system('cls' if os.name == 'nt' else 'clear')
         print("=========================================================")
         print("          SOCIALPETA DOWNLOADER INTERACTIVE CLI          ")
@@ -391,7 +390,8 @@ def run_interactive_menu():
                     core.save_config(new_dir)
                     download_dir = core.download_dir
                     print(f"[+] Đã cập nhật thư mục lưu: {download_dir}")
-            time.sleep(1.5)
+            print("\nNhấn Enter để quay lại menu chính...")
+            input()
                 
         elif choice == "5":
             try:
@@ -404,7 +404,8 @@ def run_interactive_menu():
                     print(f"[+] Đã cập nhật số trang tải: {pages_limit}")
                 else:
                     print("[-] Giá trị nhập vào không hợp lệ.")
-                time.sleep(1.5)
+                print("\nNhấn Enter để quay lại menu chính...")
+                input()
             except KeyboardInterrupt:
                 pass
                 
@@ -466,8 +467,11 @@ def run_interactive_menu():
                     print("[*] Đang tạo file CSV lọc riêng cho video YouTube...")
                     yt_csv = os.path.join(download_dir, "download_videos_youtube_only.csv")
                     core.youtube_service.run_filter_youtube_creatives_cli(input_file=csv_path, output_file=yt_csv)
-                    
+                
+                
                 print("\n[🏁] HOÀN TẤT LUỒNG TẢI DỮ LIỆU!")
+                
+                
             except Exception as e:
                 import traceback
                 print(f"[-] Lỗi trong quá trình cào/tải: {e}\n{traceback.format_exc()}")
