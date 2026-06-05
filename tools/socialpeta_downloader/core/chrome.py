@@ -17,7 +17,7 @@ class ChromeService:
         self.context = context
 
     # hàm đã hoạt động rồi đừng động vào
-    def ensure_chrome_debug_port(self, port: Optional[int] = None) -> bool:
+    def ensure_chrome_debug_port(self, port: Optional[int] = None, profile_dir: Optional[str] = None) -> bool:
         """
         Kiểm tra xem cổng debug đã được mở chưa. Nếu chưa, thử khởi chạy một trình duyệt
         Google Chrome cục bộ với chế độ Remote Debugging port và cấu hình profile riêng biệt.
@@ -66,7 +66,9 @@ class ChromeService:
             return False
             
         # Launch with custom user data directory to run side-by-side with user's main Chrome without blocking
-        if port == 9222:
+        if profile_dir:
+            chrome_profile_dir = profile_dir
+        elif port == 9222:
             chrome_profile_dir = os.path.join(settings.DATA_DIR, "chrome_debug_profile")
         else:
             chrome_profile_dir = os.path.join(settings.DATA_DIR, f"chrome_debug_profile_{port}")

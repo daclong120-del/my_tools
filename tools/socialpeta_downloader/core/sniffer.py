@@ -603,17 +603,17 @@ class SnifferService:
             return success
         return False
 
-    def run_scrape_current_page_cli(self, argv: Optional[list] = None) -> None:
+    def run_scrape_current_page_cli(self, argv: Optional[list] = None, csv_path: Optional[str] = None, port: int = 9222) -> None:
         """
         CLI để cào trang hiện tại, click và trích xuất link YouTube, sau đó khớp nối và lưu vào file CSV.
         """
         from playwright.sync_api import sync_playwright
-        port = 9222
         
         # Xác định thư mục modules của dự án để lưu file CSV đầu ra
-        core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        modules_dir = os.path.join(core_dir, "modules")
-        csv_path = os.path.join(modules_dir, "scraped_creatives.csv")
+        if not csv_path:
+            core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            modules_dir = os.path.join(core_dir, "modules")
+            csv_path = os.path.join(modules_dir, "scraped_creatives.csv")
         
         print(f"[*] File CSV đầu ra: {csv_path}")
         print(f"[*] Đang kết nối tới trình duyệt Chrome qua CDP cổng {port}...")
@@ -746,17 +746,17 @@ class SnifferService:
             browser.close()
             print("\n[🏁] Hoàn tất toàn bộ chu trình cào dữ liệu.")
 
-    def run_scrape_to_csv_cli(self, argv: Optional[list] = None) -> None:
+    def run_scrape_to_csv_cli(self, argv: Optional[list] = None, csv_path: Optional[str] = None, port: int = 9222) -> None:
         """
         CLI để cào trang hiện tại từ phản hồi API (không click YouTube) và lưu trực tiếp vào file CSV.
         """
         from playwright.sync_api import sync_playwright
-        port = 9222
         
         # Xác định thư mục modules của dự án để lưu file CSV đầu ra
-        core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        modules_dir = os.path.join(core_dir, "modules")
-        csv_path = os.path.join(modules_dir, "scraped_creatives.csv")
+        if not csv_path:
+            core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            modules_dir = os.path.join(core_dir, "modules")
+            csv_path = os.path.join(modules_dir, "scraped_creatives.csv")
         
         print(f"[*] File CSV đầu ra: {csv_path}")
         print(f"[*] Đang kết nối tới trình duyệt Chrome qua CDP cổng {port}...")

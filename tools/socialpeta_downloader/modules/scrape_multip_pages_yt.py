@@ -9,7 +9,7 @@ from socialpeta_downloader.core import SocialPetaDownloaderCore
 
 def main():
     core = SocialPetaDownloaderCore(skip_db_init=True)
-    core.youtube_service.run_download_video_youtube_only_cli(sys.argv)
+    core.youtube_service.run_scrape_pages_yt_cli(start_page=1, end_page=5, argv=sys.argv)
 
 if __name__ == "__main__":
     main()

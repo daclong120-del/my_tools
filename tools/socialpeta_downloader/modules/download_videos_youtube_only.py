@@ -9,7 +9,10 @@ from socialpeta_downloader.core import SocialPetaDownloaderCore
 
 def main():
     core = SocialPetaDownloaderCore(skip_db_init=True)
-    core.youtube_service.run_scrape_pages_1_to_10_yt_cli(sys.argv)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(current_dir, "scraped_creatives_1_to_10.csv")
+    output_dir = os.path.join(current_dir, "download_videos_youtube_only")
+    core.youtube_service.run_download_video_youtube_only_cli(sys.argv, csv_path=csv_path, output_dir=output_dir)
 
 if __name__ == "__main__":
     main()

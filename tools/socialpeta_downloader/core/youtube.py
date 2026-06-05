@@ -9,7 +9,7 @@ import time
 import traceback
 import queue
 import threading
-from typing import Optional
+from typing import Optional, Union
 from socialpeta_downloader.core.protocols import IEngineContext
 
 class YoutubeService:
@@ -816,179 +816,6 @@ class YoutubeService:
             
         return results
 
-
-    def custom_click_and_extract_youtube_from_page(self, page) -> list:
-        """
-        Quét giao diện, click vào nút Chi tiết (Detail) của từng card có icon YouTube để mở modal, 
-        trích xuất đường dẫn YouTube, trích xuất ad_id thực tế từ modal, và đóng modal.
-        """
-        results = []
-        # 1. Cuộn trang xuống để load hết các card trên giao diện trước
-        print("[*] Đang cuộn trang để tải đầy đủ các card quảng cáo...")
-        try:
-            for i in range(1, 6):
-                page.evaluate(f"window.scrollTo(0, {i * 2000})")
-                time.sleep(0.08)
-            page.evaluate("window.scrollTo(0, 0)")
-            time.sleep(0.1)
-        except Exception:
-            pass
-            
-        print("[*] Bắt đầu quét và click vào từng card có icon YouTube...")
-        
-        while True:
-            # Tìm và click vào card chưa xử lý kế tiếp
-            clicked = page.evaluate("""() => {
-                const card = Array.from(document.querySelectorAll('.creative-card-item, .shadow-common-light, [class*="creative-card"]'))
-                    .find(c => {
-                        const hasYoutube = !!c.querySelector('.net-icon-youtube') || 
-                                           !!c.querySelector('[class*="net-icon-youtube"]') ||
-                                           !!c.querySelector('[class*="-youtube"]');
-                        return hasYoutube && !c.hasAttribute('data-youtube-processed');
-                    });
-                if (card) {
-                    card.setAttribute('data-youtube-processed', 'true');
-                    card.scrollIntoView({behavior: 'instant', block: 'center'});
-                    
-                    const cardText = card.innerText || card.textContent || "";
-                    const idMatch = cardText.match(/ID:\\s*(\\d+)/) || cardText.match(/(\\d{9,18})/);
-                    const adId = idMatch ? idMatch[1] : "";
-                    
-                    let appName = "";
-                    const appEl = card.querySelector('.app-name, [class*="app-name"], .name, [class*="name"]');
-                    if (appEl) {
-                        appName = appEl.innerText || appEl.textContent || "";
-                    } else {
-                        const lines = cardText.split('\\n').map(l => l.trim()).filter(Boolean);
-                        if (lines.length > 0) appName = lines[0];
-                    }
-                    
-                    const btn = Array.from(card.querySelectorAll('button, a, [class*="btn"], [class*="detail"]'))
-                        .find(el => {
-                            const text = el.textContent || el.innerText || "";
-                            return text.includes("详情") || text.toLowerCase().includes("detail") || text.includes("Chi tiết");
-                        }) || card.querySelector('button, [class*="btn"], [class*="detail"], a') || card;
-                    
-                    if (btn.tagName && btn.tagName.toLowerCase() === 'a' && btn.hasAttribute('href')) {
-                        const hrefVal = btn.getAttribute('href');
-                        if (hrefVal && !hrefVal.includes('javascript') && !hrefVal.startsWith('#')) {
-                            btn.removeAttribute('href');
-                        }
-                    }
-                    btn.click();
-                    return { success: true, adId: adId, appName: appName.trim(), cardText: cardText };
-                }
-                return { success: false };
-            }""")
-            
-            if not clicked.get("success"):
-                # Không còn card nào có icon YouTube chưa được xử lý
-                break
-                
-            ad_id = clicked.get("adId", "")
-            app_name = clicked.get("appName", "")
-            print(f"[*] Đã click mở modal của card YouTube (ID: {ad_id}, App: {app_name}). Đang tìm link YouTube...")
-            
-            # Đợi modal xuất hiện và load link YouTube
-            found_url = ""
-            for poll in range(25):  # 25 * 80ms = 2s max wait
-                # 1. Tìm thẻ <a> có link youtube
-                a_loc = page.locator("a[href*='youtube.com'], a[href*='youtu.be'], a[href*='youtube-nocookie.com']").first
-                if a_loc.is_visible():
-                    href = a_loc.get_attribute("href")
-                    if href:
-                        found_url = href.strip()
-                        break
-                # 2. Tìm thẻ <iframe> có src youtube
-                iframe_loc = page.locator("iframe[src*='youtube.com'], iframe[src*='youtu.be'], iframe[src*='youtube-nocookie.com']").first
-                if iframe_loc.is_visible():
-                    src = iframe_loc.get_attribute("src")
-                    if src:
-                        found_url = src.strip()
-                        break
-                time.sleep(0.08)
-                
-            if not found_url:
-                # Tìm trong body text của modal làm phương án dự phòng
-                try:
-                    body_text = page.locator("body").inner_text()
-                    urls = re.findall(r'https?://[^\\s<>"]*?(?:youtu|youtube-nocookie)[^\\s<>"]*', body_text)
-                    if urls:
-                        found_url = urls[0].strip()
-                except Exception:
-                    pass
-            
-            # Đọc title/body từ modal
-            title = ""
-            body = ""
-            try:
-                modal_el = page.locator(".el-dialog, .modal, [class*='dialog'], [class*='modal']").first
-                if modal_el.is_visible():
-                    modal_text = modal_el.inner_text()
-                    lines = [l.strip() for l in modal_text.split("\n") if l.strip()]
-                    if lines:
-                        body = "\n".join(lines[:3])
-            except Exception:
-                pass
- 
-            # Trích xuất ad_id thực tế từ modal (đường dẫn Open in Single Page)
-            if not ad_id:
-                try:
-                    detail_id = page.evaluate("""() => {
-                        const link = Array.from(document.querySelectorAll("a[href*='detail?'], a[href*='/detail']"))
-                            .find(a => a.href && a.href.includes('id='));
-                        if (link) {
-                            const match = link.href.match(/[?&]id=([^&]+)/);
-                            return match ? match[1] : "";
-                        }
-                        return "";
-                    }""")
-                    if detail_id:
-                        ad_id = detail_id
-                        print(f"[*] Trích xuất ad_id dự phòng từ modal: {ad_id}")
-                except Exception as e:
-                    print(f"[*] Lỗi trích xuất ad_id dự phòng: {e}")
- 
-            youtube_url = ""
-            if found_url:
-                vid_match = re.search(r'v=([a-zA-Z0-9_-]{11})', found_url) or \
-                            re.search(r'embed/([a-zA-Z0-9_-]{11})', found_url) or \
-                            re.search(r'youtu\.be/([a-zA-Z0-9_-]{11})', found_url)
-                if vid_match:
-                    vid = vid_match.group(1)
-                    youtube_url = f"https://www.youtube.com/watch?v={vid}"
-                else:
-                    youtube_url = found_url
-                print(f"[+] Tìm thấy link YouTube: {youtube_url}")
-                results.append({
-                    "ad_id": ad_id,
-                    "app_name": app_name,
-                    "youtube_url": youtube_url,
-                    "title": title,
-                    "body": body
-                })
-            else:
-                print("[-] Không tìm thấy link YouTube cho card này.")
-                
-            # Đóng modal (ấn Escape)
-            try:
-                page.keyboard.press("Escape")
-                time.sleep(0.2)
-            except Exception:
-                pass
-                
-        # Xóa các attribute tạm để không ảnh hưởng đến các lần quét sau
-        try:
-            page.evaluate("""() => {
-                document.querySelectorAll('[data-youtube-processed]').forEach(el => {
-                    el.removeAttribute('data-youtube-processed');
-                });
-            }""")
-        except Exception:
-            pass
-            
-        return results
-
     def run_click_youtube_icons_cli(self, argv: Optional[list] = None) -> None:
         """
         CLI để kết nối Chrome, quét và click icon YouTube trên trang hiện tại để trích xuất link.
@@ -1085,9 +912,15 @@ class YoutubeService:
             
         print(f"[+] Done! Created file: {output_file}")
 
-    def run_download_video_youtube_only_cli(self, argv: Optional[list] = None) -> None:
+    def run_download_video_youtube_only_cli(
+        self,
+        argv: Optional[list] = None,
+        csv_path: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        max_workers: int = 5
+    ) -> None:
         """
-        CLI để tải video YouTube từ file CSV chỉ định.
+        CLI để tải video YouTube từ file CSV chỉ định với cấu hình linh hoạt.
         Tương tự logic cũ trong download_video_youtube_only.py.
         """
         if not self.context:
@@ -1096,26 +929,46 @@ class YoutubeService:
             
         import csv
         import requests
+        import argparse
         
         core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         modules_dir = os.path.join(core_dir, "modules")
         
-        csv_path = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
-        output_dir = os.path.join(modules_dir, "download_video_youtube_only")
+        default_csv = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
+        default_out = os.path.join(modules_dir, "download_video_youtube_only")
         
-        if argv and len(argv) > 1:
-            csv_path = argv[1]
-        if argv and len(argv) > 2:
-            output_dir = argv[2]
+        # Phân tích argv nếu có truyền vào
+        if argv is not None:
+            # Loại bỏ script name ở đầu nếu argv được truyền trực tiếp từ sys.argv
+            parse_args = argv[1:] if len(argv) > 0 and not argv[0].startswith("-") else argv
+            parser = argparse.ArgumentParser(description="Parallel YouTube Downloader")
+            parser.add_argument("--csv", type=str, default=None, help="Path to source CSV file")
+            parser.add_argument("--out", type=str, default=None, help="Path to output directory")
+            parser.add_argument("--workers", type=int, default=5, help="Number of parallel worker threads")
+            args = parser.parse_args(parse_args)
+            csv_path = args.csv or csv_path or default_csv
+            output_dir = args.out or output_dir or default_out
+            max_workers = args.workers
+        else:
+            csv_path = csv_path or default_csv
+            output_dir = output_dir or default_out
             
-        print("=" * 80)
-        print("YOUTUBE ONLY VIDEO DOWNLOADER")
-        print(f"Source CSV : {csv_path}")
-        print(f"Output Dir : {output_dir}")
-        print("=" * 80)
+        # Hàm helper log tích hợp
+        def _log(level: str, msg: str):
+            if self.context and hasattr(self.context, "utils_service") and self.context.utils_service:
+                self.context.utils_service.log(level, msg)
+            else:
+                prefix = "[*]" if level == "info" else f"[{level.upper()}]"
+                print(f"{prefix} {msg}")
+
+        _log("info", "=" * 80)
+        _log("info", "YOUTUBE ONLY VIDEO DOWNLOADER")
+        _log("info", f"Source CSV : {csv_path}")
+        _log("info", f"Output Dir : {output_dir}")
+        _log("info", "=" * 80)
         
         if not os.path.exists(csv_path):
-            print(f"[-] Error: CSV file does not exist at {csv_path}")
+            _log("error", f"CSV file does not exist at {csv_path}")
             return
             
         os.makedirs(output_dir, exist_ok=True)
@@ -1126,10 +979,10 @@ class YoutubeService:
                 reader = csv.DictReader(f)
                 rows = list(reader)
         except Exception as e:
-            print(f"[-] Error reading CSV: {e}")
+            _log("error", f"Error reading CSV: {e}")
             return
             
-        print(f"[+] Total rows found in CSV: {len(rows)}")
+        _log("info", f"Total rows found in CSV: {len(rows)}")
         
         def is_youtube_url(url):
             if not url:
@@ -1151,20 +1004,14 @@ class YoutubeService:
                 return True
             return False
             
-        def sanitize_app_name(app_name):
-            if not app_name:
-                return "UnknownApp"
-            cleaned = re.sub(r'[^\w\s-]', '', app_name)
-            cleaned = re.sub(r'\s+', '_', cleaned).strip()
-            return cleaned if cleaned else "UnknownApp"
-            
+
         def download_direct_mp4(url, out_path):
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }
             temp_path = out_path + ".cdn.tmp"
             try:
-                print(f"    [CDN Fallback] Downloading from CDN: {url}")
+                _log("info", f"Downloading from CDN: {url}")
                 response = requests.get(url, headers=headers, stream=True, timeout=20)
                 response.raise_for_status()
                 if response.raw and hasattr(response.raw, "connection") and response.raw.connection:
@@ -1179,10 +1026,10 @@ class YoutubeService:
                 if os.path.exists(out_path):
                     os.remove(out_path)
                 os.rename(temp_path, out_path)
-                print(f"    [SUCCESS] CDN Fallback download complete.")
+                _log("info", "CDN Fallback download complete.")
                 return True
             except Exception as e:
-                print(f"    [CDN Error] Error downloading CDN URL: {e}")
+                _log("error", f"Error downloading CDN URL: {e}")
                 if os.path.exists(temp_path):
                     try:
                         os.remove(temp_path)
@@ -1193,9 +1040,13 @@ class YoutubeService:
         to_download = []
         seen_urls = set()
         for row in rows:
+            video_url = row.get("video_url", "").strip()
+            # If there's a valid direct CDN video link, skip it as it's processed by the other downloader
+            if video_url and not is_youtube_url(video_url):
+                continue
+                
             yt_url = row.get("youtube_url", "").strip()
             if not yt_url:
-                video_url = row.get("video_url", "").strip()
                 if is_youtube_url(video_url):
                     yt_url = video_url
             if yt_url and is_youtube_url(yt_url):
@@ -1205,12 +1056,13 @@ class YoutubeService:
                     to_download.append(row)
                     
         total_videos = len(to_download)
-        print(f"[+] Found {total_videos} unique YouTube video URLs to download.")
+        _log("info", f"Found {total_videos} unique YouTube video URLs to download.")
         
         if total_videos == 0:
-            print("[*] No YouTube videos to download. Exiting.")
+            _log("info", "No YouTube videos to download. Exiting.")
             return
             
+        from concurrent.futures import ThreadPoolExecutor
         import yt_dlp
         from socialpeta_downloader.config import settings
         ffmpeg_path = getattr(settings, "FFMPEG_PATH", "ffmpeg")
@@ -1219,25 +1071,28 @@ class YoutubeService:
         fail_count = 0
         skip_count = 0
         
-        for index, item in enumerate(to_download, 1):
+        _log("info", f"Starting download with {max_workers} parallel workers...")
+        _log("info", "-" * 80)
+        
+        def _download_yt_task(index, item):
             ad_id = item.get("ad_id", "unknown").strip()
             app_name = item.get("app_name", "UnknownApp").strip()
             youtube_url = item["youtube_url_resolved"]
             video_url = item.get("video_url", "").strip()
             
-            cleaned_app_name = sanitize_app_name(app_name)
-            final_filename = f"{cleaned_app_name}_{ad_id}.mp4"
+            video_name = item.get("video_name", "").strip()
+            if video_name:
+                final_filename = video_name
+            else:
+                final_filename, _ = self.context.utils_service.get_unique_filename(app_name)
             final_path = os.path.join(output_dir, final_filename)
             
-            print(f"\n[{index}/{total_videos}] Processing: {app_name} (ID: {ad_id})")
-            print(f"    URL: {youtube_url}")
+            _log("info", f"[{index}/{total_videos}] Processing: {app_name} (ID: {ad_id}) -> {final_filename}")
             
             if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
-                print(f"    [SKIP] Already downloaded as {final_filename}")
-                skip_count += 1
-                continue
+                _log("info", f"Already downloaded as {final_filename}")
+                return "skip", final_filename
                 
-            print(f"    Downloading to: {final_filename}...")
             is_truncated = not is_untruncated_youtube_url(youtube_url)
             has_cdn_fallback = video_url and not is_youtube_url(video_url)
             downloaded = False
@@ -1248,8 +1103,8 @@ class YoutubeService:
                     'outtmpl': temp_output,
                     'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
                     'merge_output_format': 'mp4',
-                    'quiet': False,
-                    'no_warnings': False,
+                    'quiet': True,
+                    'no_warnings': True,
                 }
                 if ffmpeg_path and ffmpeg_path != "ffmpeg":
                     ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_path)
@@ -1268,13 +1123,13 @@ class YoutubeService:
                         if os.path.exists(final_path):
                             os.remove(final_path)
                         os.rename(actual_temp_file, final_path)
-                        print(f"    [SUCCESS] Saved via yt-dlp to {final_filename}")
-                        success_count += 1
+                        _log("info", f"Saved via yt-dlp to {final_filename}")
                         downloaded = True
+                        return "success", final_filename
                     else:
-                        print(f"    [ERROR] yt-dlp download completed but temp output file not found.")
+                        _log("error", f"yt-dlp download completed for {final_filename} but temp output file not found.")
                 except Exception as e:
-                    print(f"    [ERROR] yt-dlp download failed: {e}")
+                    _log("error", f"yt-dlp download failed for {final_filename}: {e}")
                     for suffix in ["", ".mp4", ".f137.mp4", ".f251.webm", ".temp", ".part"]:
                         p = temp_output + suffix
                         if os.path.exists(p):
@@ -1283,29 +1138,47 @@ class YoutubeService:
                             except Exception:
                                 pass
             else:
-                print(f"    [INFO] YouTube URL is truncated/corrupted: {youtube_url}")
+                _log("info", f"YouTube URL is truncated/corrupted: {youtube_url}")
                 
             if not downloaded:
                 if has_cdn_fallback:
-                    print(f"    [FALLBACK] Attempting CDN fallback download from {video_url}...")
+                    _log("info", f"Attempting CDN fallback download for {final_filename} from {video_url}...")
                     if download_direct_mp4(video_url, final_path):
+                        return "success", final_filename
+                    else:
+                        return "fail", final_filename
+                else:
+                    _log("error", f"No valid CDN fallback video URL available for {final_filename}.")
+                    return "fail", final_filename
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_download_yt_task, index, item): item 
+                for index, item in enumerate(to_download, 1)
+            }
+            
+            for future in futures:
+                try:
+                    result_status, fname = future.result()
+                    if result_status == "success":
                         success_count += 1
-                        downloaded = True
+                    elif result_status == "skip":
+                        skip_count += 1
                     else:
                         fail_count += 1
-                else:
-                    print(f"    [ERROR] No valid CDN fallback video URL available.")
+                except Exception as e:
+                    _log("error", f"Future failed: {e}")
                     fail_count += 1
                     
-        print("\n" + "=" * 80)
-        print("DOWNLOAD COMPLETED SUMMARY")
-        print(f"Total Videos processed : {total_videos}")
-        print(f"Successfully downloaded: {success_count}")
-        print(f"Skipped (already exist): {skip_count}")
-        print(f"Failed downloads       : {fail_count}")
-        print("=" * 80)
+        _log("info", "\n" + "=" * 80)
+        _log("info", "DOWNLOAD COMPLETED SUMMARY")
+        _log("info", f"Total Videos processed : {total_videos}")
+        _log("info", f"Successfully downloaded: {success_count}")
+        _log("info", f"Skipped (already exist): {skip_count}")
+        _log("info", f"Failed downloads       : {fail_count}")
+        _log("info", "=" * 80)
 
-    def run_scrape_current_page_yt_cli(self, argv: Optional[list] = None) -> None:
+    def run_scrape_current_page_yt_cli(self, argv: Optional[list] = None, csv_path: Optional[str] = None, port: int = 9222) -> None:
         """
         CLI để cào trang hiện tại dùng trang tạm, click và trích xuất link YouTube, lưu kết quả đè scraped_creatives_raw.csv.
         Tương tự logic cũ trong scrape_current_page_yt.py.
@@ -1317,14 +1190,14 @@ class YoutubeService:
         from playwright.sync_api import sync_playwright
         import csv
         
-        core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        modules_dir = os.path.join(core_dir, "modules")
-        csv_path = os.path.join(modules_dir, "scraped_creatives_raw.csv")
-        
-        if argv and len(argv) > 1:
-            csv_path = argv[1]
+        if not csv_path:
+            core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            modules_dir = os.path.join(core_dir, "modules")
+            csv_path = os.path.join(modules_dir, "scraped_creatives_raw.csv")
             
-        port = 9222
+            if argv and len(argv) > 1:
+                csv_path = argv[1]
+            
         print(f"[*] File CSV đầu ra: {csv_path}")
         print(f"[*] Đang kết nối tới trình duyệt Chrome qua CDP cổng {port}...")
         
@@ -1409,7 +1282,7 @@ class YoutubeService:
                             
                     if has_youtube_to_scrape:
                         print("[*] Phát hiện quảng cáo YouTube cần lấy link. Bắt đầu quét và click từng icon trên trang...")
-                        results = self.custom_click_and_extract_youtube_from_page(page)
+                        results = self.click_and_extract_youtube_from_page(page)
                         if results:
                             print(f"[*] Đang tiến hành khớp nối link YouTube vừa cào vào danh sách quảng cáo...")
                             for res in results:
@@ -1456,10 +1329,18 @@ class YoutubeService:
             browser.close()
             print(f"\n[🏁] Hoàn tất cào trang {current_page}.")
 
-    def run_scrape_pages_1_to_10_yt_cli(self, argv: Optional[list] = None) -> None:
+    def run_scrape_pages_yt_cli(
+        self,
+        start_page: Union[int, list, None] = 1,
+        end_page: int = 10,
+        csv_path: Optional[str] = None,
+        argv: Optional[list] = None,
+        progress_callback: Optional[callable] = None,
+        port: int = 9222
+    ) -> dict:
         """
-        CLI để cào từ trang 1 đến trang 10, bắt API response và click Youtube để lấy link thực tế, lưu (append) vào scraped_creatives_1_to_10.csv.
-        Tương tự logic cũ trong scrape_pages_1_to_10_yt.py.
+        CLI / API to scrape from start_page to end_page, capture API response and click YouTube to extract URLs,
+        saving results into csv_path.
         """
         if not self.context:
             from socialpeta_downloader.core import SocialPetaDownloaderCore
@@ -1468,18 +1349,17 @@ class YoutubeService:
         from playwright.sync_api import sync_playwright
         import csv
         
-        core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        modules_dir = os.path.join(core_dir, "modules")
-        csv_path = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
-        
-        start_page = 1
-        end_page = 10
-        
+        start_page_val = 1
+        if isinstance(start_page, list):
+            argv = start_page
+        elif isinstance(start_page, int):
+            start_page_val = start_page
+            
         if argv and len(argv) > 1:
             try:
                 parts = argv[1].split("-")
                 if len(parts) == 2:
-                    start_page = int(parts[0])
+                    start_page_val = int(parts[0])
                     end_page = int(parts[1])
                 else:
                     end_page = int(argv[1])
@@ -1488,14 +1368,40 @@ class YoutubeService:
         if argv and len(argv) > 2:
             csv_path = argv[2]
             
+        start_page = start_page_val
+            
+        if not csv_path:
+            core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            modules_dir = os.path.join(core_dir, "modules")
+            csv_path = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
+            
         fieldnames = ["ad_id", "video_name", "media_type", "video_url", "youtube_url", "image_url",
                       "duration", "impression", "heat", "platform", "download_time",
                       "publisher", "app_name", "area", "copywriting_language", "title",
                       "body", "deployment_time", "saved_path", "file_size"]
                       
-        print(f"[*] File CSV đầu ra: {csv_path}")
-        print(f"[*] Cào từ trang {start_page} đến trang {end_page}")
-        print(f"[*] Đang kết nối tới trình duyệt Chrome qua CDP cổng 9222...")
+        # Helper to print, log, and callback
+        def report(status_type: str, message: str, extra: Optional[dict] = None):
+            if self.context:
+                self.context.log("error" if status_type == "error" else "info", message)
+            else:
+                print(message)
+            if progress_callback:
+                payload = {"type": status_type, "message": message}
+                if extra:
+                    payload.update(extra)
+                try:
+                    progress_callback(payload)
+                except Exception as cb_err:
+                    print(f"[Callback Error] {cb_err}")
+
+        report("start", f"[*] File CSV đầu ra: {csv_path}", extra={"csv_path": csv_path})
+        report("info", f"[*] Cào từ trang {start_page} đến trang {end_page}", extra={"start_page": start_page, "end_page": end_page})
+        report("info", f"[*] Đang kết nối tới trình duyệt Chrome qua CDP cổng 9222...")
+        
+        total_scraped = 0
+        total_youtube_matched = 0
+        pages_scraped = []
         
         def is_untruncated_youtube_url(url: str) -> bool:
             if not url:
@@ -1520,17 +1426,20 @@ class YoutubeService:
                     writer.writerow(clean_row)
                     
         with sync_playwright() as p:
-            browser, page = self.context.connect_to_active_tab(p, 9222)
+            browser, page = self.context.connect_to_active_tab(p, port)
             if not page:
-                print("[-] Không tìm thấy tab SocialPeta đang hoạt động hoặc không kết nối được.")
-                return
+                report("error", "[-] Không tìm thấy tab SocialPeta đang hoạt động hoặc không kết nối được.")
+                return {
+                    "status": "error",
+                    "message": "Không tìm thấy tab SocialPeta đang hoạt động hoặc không kết nối được."
+                }
                 
-            print("[*] Đang đọc vị trí trang hiện tại từ giao diện UI...")
+            report("info", "[*] Đang đọc vị trí trang hiện tại từ giao diện UI...")
             try:
                 current_page = self.context.utils_service.get_current_page(page)
-                print(f"[+] Bạn đang ở trang: {current_page}")
+                report("info", f"[+] Bạn đang ở trang: {current_page}")
             except Exception as e:
-                print(f"[WARN] Không đọc được số trang hiện tại từ UI, mặc định coi là 1. Chi tiết: {e}")
+                report("warning", f"[WARN] Không đọc được số trang hiện tại từ UI, mặc định coi là 1. Chi tiết: {e}")
                 current_page = 1
                 
             # Khởi tạo/ghi đè file CSV trống có tiêu đề
@@ -1541,46 +1450,46 @@ class YoutubeService:
                 
             if current_page == start_page:
                 temp_page = start_page + 1 if start_page == 1 else start_page - 1
-                print(f"[*] Đang chuyển sang Trang {temp_page} tạm thời để kích hoạt lại API khi quay về Trang {start_page}...")
+                report("info", f"[*] Đang chuyển sang Trang {temp_page} tạm thời để kích hoạt lại API khi quay về Trang {start_page}...")
                 success_temp = self.context.sniffer_service._navigate_to_page(page, temp_page)
                 if not success_temp:
-                    print(f"[-] Thất bại khi di chuyển sang trang tạm {temp_page}.")
+                    report("warning", f"[-] Thất bại khi di chuyển sang trang tạm {temp_page}.")
                 time.sleep(3.0)
                 
             for p_num in range(start_page, end_page + 1):
-                print(f"\n[🚀] Bắt đầu cào dữ liệu cho Trang {p_num}/{end_page}...")
+                report("page_start", f"\n[🚀] Bắt đầu cào dữ liệu cho Trang {p_num}/{end_page}...", extra={"page": p_num})
                 try:
-                    print(f"[*] Đang điều hướng đến Trang {p_num} và chờ bắt gói tin API...")
+                    report("info", f"[*] Đang điều hướng đến Trang {p_num} và chờ bắt gói tin API...")
                     with page.expect_response(
                         lambda r: "/creative/list" in r.url or "/creative-rank/list" in r.url,
                         timeout=30000
                     ) as response_info:
                         success_nav = self.context.sniffer_service._navigate_to_page(page, p_num)
                         if not success_nav:
-                            print(f"[-] Thất bại khi điều hướng đến Trang {p_num}.")
+                            report("error", f"[-] Thất bại khi điều hướng đến Trang {p_num}.")
                             continue
                             
                     response = response_info.value
                     url = response.url
-                    print(f"[+] Đã nhận phản hồi từ API URL: {url}")
+                    report("info", f"[+] Đã nhận phản hồi từ API URL: {url}")
                     time.sleep(1.5)
                     
                     actual_page = self.context.utils_service.get_current_page(page)
-                    print(f"[*] Kiểm tra UI: Trang hiện tại hiển thị trên giao diện là {actual_page}")
+                    report("info", f"[*] Kiểm tra UI: Trang hiện tại hiển thị trên giao diện là {actual_page}")
                     if actual_page != p_num:
-                        print(f"[WARN] Cảnh báo: Giao diện hiển thị trang {actual_page} khác với mục tiêu {p_num}!")
+                        report("warning", f"[WARN] Cảnh báo: Giao diện hiển thị trang {actual_page} khác với mục tiêu {p_num}!")
                         
                     body = response.json()
                     raw_items = self.context.sniffer_service._recursive_find_creatives(body)
                     parsed_items = []
                     if raw_items:
-                        print(f"[📡] Bắt được {len(raw_items)} quảng cáo thô từ API phản hồi của Trang {p_num}.")
+                        report("info", f"[📡] Bắt được {len(raw_items)} quảng cáo thô từ API phản hồi của Trang {p_num}.")
                         for raw in raw_items:
                             parsed = self.context.utils_service._parse_creative_item(raw)
                             if parsed.get("ad_id"):
                                 parsed_items.append(parsed)
                     else:
-                        print(f"[-] Không tìm thấy quảng cáo nào trong phản hồi API của Trang {p_num}.")
+                        report("warning", f"[-] Không tìm thấy quảng cáo nào trong phản hồi API của Trang {p_num}.")
                         continue
                         
                     has_youtube_to_scrape = False
@@ -1594,12 +1503,12 @@ class YoutubeService:
                             has_youtube_to_scrape = True
                             break
                             
+                    matched_count = 0
                     if has_youtube_to_scrape:
-                        print(f"[*] Phát hiện quảng cáo YouTube cần lấy link trên Trang {p_num}. Bắt đầu quét và click...")
-                        clicked_results = self.custom_click_and_extract_youtube_from_page(page)
+                        report("info", f"[*] Phát hiện quảng cáo YouTube cần lấy link trên Trang {p_num}. Bắt đầu quét và click...")
+                        clicked_results = self.click_and_extract_youtube_from_page(page)
                         if clicked_results:
-                            print(f"[+] Trích xuất được {len(clicked_results)} link YouTube từ thao tác click. Bắt đầu khớp nối...")
-                            matched_count = 0
+                            report("info", f"[+] Trích xuất được {len(clicked_results)} link YouTube từ thao tác click. Bắt đầu khớp nối...")
                             for clicked in clicked_results:
                                 youtube_url = clicked.get("youtube_url")
                                 clicked_ad_id = clicked.get("ad_id")
@@ -1615,7 +1524,7 @@ class YoutubeService:
                                             item["platform"] = "youtube"
                                             matched = True
                                             matched_count += 1
-                                            print(f"    [✓] Khớp theo ID ({clicked_ad_id}): {youtube_url}")
+                                            report("info", f"    [✓] Khớp theo ID ({clicked_ad_id}): {youtube_url}")
                                             break
                                 if matched:
                                     continue
@@ -1634,21 +1543,35 @@ class YoutubeService:
                                                 item["platform"] = "youtube"
                                                 matched = True
                                                 matched_count += 1
-                                                print(f"    [~] Khớp theo App ({clicked_app_name} -> {item.get('app_name')}): {youtube_url}")
+                                                report("info", f"    [~] Khớp theo App ({clicked_app_name} -> {item.get('app_name')}): {youtube_url}")
                                                 break
-                            print(f"[+] Hoàn tất khớp nối! Đã khớp thành công {matched_count}/{len(clicked_results)} quảng cáo YouTube.")
+                            report("info", f"[+] Hoàn tất khớp nối! Đã khớp thành công {matched_count}/{len(clicked_results)} quảng cáo YouTube.")
                         else:
-                            print("[-] Không click trích xuất được link YouTube nào trên giao diện.")
+                            report("warning", "[-] Không click trích xuất được link YouTube nào trên giao diện.")
                     else:
-                        print("[*] Trang này không có quảng cáo YouTube nào cần lấy thêm link.")
+                        report("info", "[*] Trang này không có quảng cáo YouTube nào cần lấy thêm link.")
                         
                     if parsed_items:
                         append_to_csv_report(csv_path, parsed_items)
-                        print(f"[🏁] Đã lưu xong {len(parsed_items)} quảng cáo của Trang {p_num} vào: {csv_path}")
+                        total_scraped += len(parsed_items)
+                        total_youtube_matched += matched_count
+                        pages_scraped.append(p_num)
+                        report("page_success", f"[🏁] Đã lưu xong {len(parsed_items)} quảng cáo của Trang {p_num} vào: {csv_path}", extra={"page": p_num, "count": len(parsed_items)})
                 except Exception as e:
-                    print(f"[-] Lỗi trong quá trình xử lý Trang {p_num}: {e}")
+                    report("error", f"[-] Lỗi trong quá trình xử lý Trang {p_num}: {e}")
             browser.close()
-            print(f"\n[🏁] Hoàn tất cào dữ liệu từ trang {start_page} đến {end_page}. File báo cáo: {csv_path}")
+            
+        summary = {
+            "status": "success",
+            "start_page": start_page,
+            "end_page": end_page,
+            "csv_path": csv_path,
+            "total_scraped": total_scraped,
+            "total_youtube_matched": total_youtube_matched,
+            "pages_scraped": pages_scraped
+        }
+        report("complete", f"\n[🏁] Hoàn tất cào dữ liệu từ trang {start_page} đến {end_page}. File báo cáo: {csv_path}", extra={"summary": summary})
+        return summary
 
     def run_scrape_youtube_to_csv_cli(self, argv: Optional[list] = None) -> None:
         """
@@ -1763,7 +1686,7 @@ class YoutubeService:
                     print(f"[*] Không đọc được trang hiện tại từ giao diện UI: {e}")
                     
                 print("[*] Bắt đầu quét và click từng icon YouTube trên trang để lấy link thực tế...")
-                results = self.custom_click_and_extract_youtube_from_page(page)
+                results = self.click_and_extract_youtube_from_page(page)
                 
                 if not results:
                     print("[-] Không tìm thấy hoặc không trích xuất được link YouTube nào từ trang hiện tại.")

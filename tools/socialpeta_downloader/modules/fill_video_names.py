@@ -1,3 +1,9 @@
+# tools/socialpeta_downloader/modules/fill_video_names.py
+"""
+Script điền video_name còn thiếu trong file CSV scraped_creatives_1_to_10.csv
+sử dụng core đặt tên duy nhất từ UtilsService.
+"""
+
 import os
 import sys
 
@@ -11,8 +17,7 @@ def main():
     core = SocialPetaDownloaderCore(skip_db_init=True)
     current_dir = os.path.dirname(os.path.abspath(__file__))
     csv_path = os.path.join(current_dir, "scraped_creatives_1_to_10.csv")
-    output_dir = os.path.join(current_dir, "download_images")
-    core.downloader_service.run_download_images_cli(sys.argv, csv_path=csv_path, output_dir=output_dir)
+    core.fill_video_names_in_csv(csv_path)
 
 if __name__ == "__main__":
     main()

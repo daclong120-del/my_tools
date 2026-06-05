@@ -567,11 +567,10 @@ class TabScanner:
                     self.context.tab_states[tab_index]["status"] = "done"
                 print(f"[+] Tab {tab_index} Scraper dung. Trang thai cuoi: {self.context.tab_states[tab_index]['status']}")
 
-    def run_connect_current_tab_cli(self, argv: Optional[List[str]] = None) -> None:
+    def run_connect_current_tab_cli(self, argv: Optional[List[str]] = None, port: int = 9222) -> None:
         """
         CLI để kết nối CDP và tìm kiếm tab hiện tại đang active.
         """
-        port = 9222
         if not self.context:
             from socialpeta_downloader.core import SocialPetaDownloaderCore
             self.context = SocialPetaDownloaderCore(skip_db_init=True)
@@ -642,11 +641,10 @@ class TabScanner:
                 browser.close()
                 print("[*] Đã ngắt kết nối trình duyệt an toàn.")
 
-    def run_connect_first_tab_cli(self, argv: Optional[List[str]] = None) -> None:
+    def run_connect_first_tab_cli(self, argv: Optional[List[str]] = None, port: int = 9222) -> None:
         """
         CLI để kết nối Playwright CDP vào tab đầu tiên.
         """
-        port = 9222
         if not self.context:
             from socialpeta_downloader.core import SocialPetaDownloaderCore
             self.context = SocialPetaDownloaderCore(skip_db_init=True)
@@ -689,11 +687,10 @@ class TabScanner:
                 browser.close()
                 print("[*] Đã ngắt kết nối trình duyệt an toàn.")
 
-    def run_list_tabs_cli(self, argv: Optional[List[str]] = None) -> None:
+    def run_list_tabs_cli(self, argv: Optional[List[str]] = None, port: int = 9222) -> None:
         """
         CLI để quét tìm các tab SocialPeta đang mở.
         """
-        port = 9222
         if not self.context:
             from socialpeta_downloader.core import SocialPetaDownloaderCore
             self.context = SocialPetaDownloaderCore(skip_db_init=True)

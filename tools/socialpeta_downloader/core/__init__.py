@@ -412,8 +412,57 @@ class SocialPetaDownloaderCore:
             self.stop_system()
             print("[+] Da dung SocialPeta Downloader.")
 
+    def fill_video_names_in_csv(self, csv_path: str) -> int:
+        """
+        Điền các video_name còn thiếu trong file CSV chỉ định sử dụng logic đặt tên của core.
+        Trả về số dòng đã được điền.
+        """
+        import csv
+        if not os.path.exists(csv_path):
+            self.log("error", f"[-] Không tìm thấy file CSV tại: {csv_path}")
+            return 0
 
+        # Đọc file CSV
+        rows = []
+        fieldnames = []
+        try:
+            with open(csv_path, mode="r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames
+                rows = list(reader)
+        except Exception as e:
+            self.log("error", f"[-] Lỗi đọc file CSV: {e}")
+            return 0
 
+        self.log("info", f"[*] Đã đọc {len(rows)} dòng từ {csv_path}")
+        
+        filled_count = 0
+        for row in rows:
+            video_name = row.get("video_name", "").strip()
+            if not video_name:
+                media_type = row.get("media_type", "").strip().lower()
+                app_name = row.get("app_name", "").strip() or "UnknownApp"
+                image_url = row.get("image_url", "").strip()
+                
+                if media_type in ("image", "youtube_thumbnail"):
+                    filename, _ = self.get_unique_image_filename(app_name, image_url)
+                else:
+                    filename, _ = self.get_unique_filename(app_name)
+                    
+                row["video_name"] = filename
+                filled_count += 1
 
-
-
+        if filled_count > 0:
+            # Ghi lại file CSV
+            try:
+                with open(csv_path, mode="w", encoding="utf-8-sig", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                self.log("info", f"[+] Đã điền thành công {filled_count} video_name vào file CSV.")
+            except Exception as e:
+                self.log("error", f"[-] Lỗi ghi file CSV: {e}")
+        else:
+            self.log("info", "[*] Không có video_name nào cần điền.")
+            
+        return filled_count

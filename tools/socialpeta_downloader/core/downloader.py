@@ -258,9 +258,24 @@ class DownloaderService:
                                 ad_id, item.get("app_name", "UnknownApp"), dup_ad_id, f"Image MD5 match with {dup_ad_id}"
                             )
                         else:
-                            filename, _ = self.context.utils_service.get_unique_image_filename(
-                                item.get("app_name", "UnknownApp"), image_url
-                            )
+                            video_name = item.get("video_name", "").strip()
+                            if video_name:
+                                if video_name.lower().endswith(tuple([".png", ".jpg", ".jpeg", ".webp", ".gif"])):
+                                    filename = video_name
+                                else:
+                                    name_without_ext, _ = os.path.splitext(video_name)
+                                    ext = ".jpg"
+                                    if image_url:
+                                        path_part = image_url.split("?")[0]
+                                        for e in [".png", ".jpg", ".jpeg", ".webp", ".gif"]:
+                                            if path_part.lower().endswith(e):
+                                                ext = e
+                                                break
+                                    filename = name_without_ext + ext
+                            else:
+                                filename, _ = self.context.utils_service.get_unique_image_filename(
+                                    item.get("app_name", "UnknownApp"), image_url
+                                )
                             target_dir = item.get("subfolder_path") or self.context.download_dir
                             os.makedirs(target_dir, exist_ok=True)
                             final_path = os.path.join(target_dir, filename)
@@ -518,7 +533,11 @@ class DownloaderService:
                     if youtube_url and youtube_url.strip():
                         self.context.session_service.update_master_youtube_url(dup_ad_id, youtube_url)
                 else:
-                    final_filename, _ = self.context.utils_service.get_unique_filename(item["app_name"])
+                    video_name = item.get("video_name", "").strip()
+                    if video_name:
+                        final_filename = video_name
+                    else:
+                        final_filename, _ = self.context.utils_service.get_unique_filename(item["app_name"])
                     target_dir = item.get("subfolder_path") or self.context.download_dir
                     os.makedirs(target_dir, exist_ok=True)
                     final_path = os.path.join(target_dir, final_filename)
@@ -619,27 +638,61 @@ class DownloaderService:
                 self.context.download_semaphore.set_value(recommended)
             time.sleep(5)
 
-    def run_download_images_cli(self, argv: Optional[list] = None) -> None:
+    def run_download_images_cli(
+        self,
+        argv: Optional[list] = None,
+        csv_path: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        max_workers: Optional[int] = None
+    ) -> None:
         """
-        CLI để tải ảnh song song từ file CSV.
+        CLI để tải ảnh song song từ file CSV với cấu hình linh hoạt.
         """
         import csv
         import re
+        import argparse
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         modules_dir = os.path.join(script_dir, "modules")
-        csv_path = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
-        output_dir = os.path.join(modules_dir, "download_images")
         
-        print("=" * 80)
-        print("PARALLEL IMAGE ONLY DOWNLOADER")
-        print(f"Source CSV : {csv_path}")
-        print(f"Output Dir : {output_dir}")
-        print("=" * 80)
+        default_csv = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
+        default_out = os.path.join(modules_dir, "download_images")
+        default_workers = 20
+
+        # Phân tích argv nếu có truyền vào
+        if argv is not None:
+            # Loại bỏ script name ở đầu nếu argv được truyền trực tiếp từ sys.argv
+            parse_args = argv[1:] if len(argv) > 0 and not argv[0].startswith("-") else argv
+            parser = argparse.ArgumentParser(description="Parallel Image Downloader")
+            parser.add_argument("--csv", type=str, default=None, help="Path to source CSV file")
+            parser.add_argument("--out", type=str, default=None, help="Path to output directory")
+            parser.add_argument("--workers", type=int, default=None, help="Number of parallel workers")
+            args = parser.parse_args(parse_args)
+            csv_path = args.csv or csv_path or default_csv
+            output_dir = args.out or output_dir or default_out
+            max_workers = args.workers or max_workers or default_workers
+        else:
+            csv_path = csv_path or default_csv
+            output_dir = output_dir or default_out
+            max_workers = max_workers or default_workers
+
+        # Hàm helper log tích hợp
+        def _log(level: str, msg: str):
+            if self.context and hasattr(self.context, "utils_service") and self.context.utils_service:
+                self.context.utils_service.log(level, msg)
+            else:
+                prefix = "[*]" if level == "info" else f"[{level.upper()}]"
+                print(f"{prefix} {msg}")
+
+        _log("info", "=" * 80)
+        _log("info", "PARALLEL IMAGE ONLY DOWNLOADER")
+        _log("info", f"Source CSV : {csv_path}")
+        _log("info", f"Output Dir : {output_dir}")
+        _log("info", "=" * 80)
         
         if not os.path.exists(csv_path):
-            print(f"[-] Error: CSV file does not exist at {csv_path}")
+            _log("error", f"CSV file does not exist at {csv_path}")
             return
             
         os.makedirs(output_dir, exist_ok=True)
@@ -651,10 +704,10 @@ class DownloaderService:
                 reader = csv.DictReader(f)
                 rows = list(reader)
         except Exception as e:
-            print(f"[-] Error reading CSV: {e}")
+            _log("error", f"Error reading CSV: {e}")
             return
             
-        print(f"[+] Total rows found in CSV: {len(rows)}")
+        _log("info", f"Total rows found in CSV: {len(rows)}")
         
         # Filter for unique image URLs
         to_download = []
@@ -668,46 +721,45 @@ class DownloaderService:
                     to_download.append(row)
                     
         total_images = len(to_download)
-        print(f"[+] Found {total_images} unique image URLs to download.")
+        _log("info", f"Found {total_images} unique image URLs to download.")
         
         if total_images == 0:
-            print("[*] No images to download. Exiting.")
+            _log("info", "No images to download. Exiting.")
             return
             
         success_count = 0
         fail_count = 0
         skip_count = 0
         
-        max_workers = 20
-        print(f"[+] Starting download with {max_workers} parallel workers...")
-        print("-" * 80)
+        _log("info", f"Starting download with {max_workers} parallel workers...")
+        _log("info", "-" * 80)
         
-        def _sanitize(app_name):
-            if not app_name:
-                return "UnknownApp"
-            cleaned = re.sub(r'[^\w\s-]', '', app_name)
-            cleaned = re.sub(r'\s+', '_', cleaned).strip()
-            return cleaned if cleaned else "UnknownApp"
-
         def _download_img_task(idx, item):
             ad_id = item.get("ad_id", "unknown").strip()
             app_name = item.get("app_name", "UnknownApp").strip()
             img_url = item["image_url"].strip()
-            
-            ext = ".jpg"
-            url_path = img_url.split("?")[0]
-            match_ext = re.search(r'\.(\w{3,4})$', url_path)
-            if match_ext:
-                ext = f".{match_ext.group(1)}"
-                
-            cleaned_app = _sanitize(app_name)
-            final_filename = f"{cleaned_app}_{ad_id}{ext}"
+            video_name = item.get("video_name", "").strip()
+            if video_name:
+                if video_name.lower().endswith(tuple([".png", ".jpg", ".jpeg", ".webp", ".gif"])):
+                    final_filename = video_name
+                else:
+                    name_without_ext, _ = os.path.splitext(video_name)
+                    ext = ".jpg"
+                    if img_url:
+                        path_part = img_url.split("?")[0]
+                        for e in [".png", ".jpg", ".jpeg", ".webp", ".gif"]:
+                            if path_part.lower().endswith(e):
+                                ext = e
+                                break
+                    final_filename = name_without_ext + ext
+            else:
+                final_filename, _ = self.context.utils_service.get_unique_image_filename(app_name, img_url)
             final_path = os.path.join(output_dir, final_filename)
             
             if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
                 return "skip", final_filename, img_url
                 
-            print(f"[{idx}/{total_images}] Downloading: {final_filename}...")
+            _log("info", f"[{idx}/{total_images}] Downloading: {final_filename}...")
             
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -730,7 +782,7 @@ class DownloaderService:
                 os.rename(temp_path, final_path)
                 return "success", final_filename, img_url
             except Exception as e:
-                print(f"    [ERROR] Download failed for {img_url}: {e}")
+                _log("error", f"Download failed for {img_url}: {e}")
                 if os.path.exists(temp_path):
                     try:
                         os.remove(temp_path)
@@ -754,38 +806,72 @@ class DownloaderService:
                     else:
                         fail_count += 1
                 except Exception as e:
-                    print(f"[-] Thread execution error: {e}")
+                    _log("error", f"Thread execution error: {e}")
                     fail_count += 1
                     
-        print("\n" + "=" * 80)
-        print("DOWNLOAD COMPLETED SUMMARY")
-        print(f"Total Images processed : {total_images}")
-        print(f"Successfully downloaded: {success_count}")
-        print(f"Skipped (already exist): {skip_count}")
-        print(f"Failed downloads       : {fail_count}")
-        print("=" * 80)
+        _log("info", "\n" + "=" * 80)
+        _log("info", "DOWNLOAD COMPLETED SUMMARY")
+        _log("info", f"Total Images processed : {total_images}")
+        _log("info", f"Successfully downloaded: {success_count}")
+        _log("info", f"Skipped (already exist): {skip_count}")
+        _log("info", f"Failed downloads       : {fail_count}")
+        _log("info", "=" * 80)
 
-    def run_download_videos_not_youtube_cli(self, argv: Optional[list] = None) -> None:
+    def run_download_videos_not_youtube_cli(
+        self,
+        argv: Optional[list] = None,
+        csv_path: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        max_workers: Optional[int] = None
+    ) -> None:
         """
-        CLI để tải video CDN trực tiếp (không phải Youtube) từ file CSV.
+        CLI để tải video CDN trực tiếp (không phải Youtube) từ file CSV với cấu hình linh hoạt.
         """
         import csv
         import re
+        import argparse
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         modules_dir = os.path.join(script_dir, "modules")
-        csv_path = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
-        output_dir = os.path.join(modules_dir, "download_videos_not_youtube")
         
-        print("=" * 80)
-        print("PARALLEL NON-YOUTUBE VIDEO DOWNLOADER")
-        print(f"Source CSV : {csv_path}")
-        print(f"Output Dir : {output_dir}")
-        print("=" * 80)
+        default_csv = os.path.join(modules_dir, "scraped_creatives_1_to_10.csv")
+        default_out = os.path.join(modules_dir, "download_videos_not_youtube")
+        default_workers = 10
+
+        # Phân tích argv nếu có truyền vào
+        if argv is not None:
+            # Loại bỏ script name ở đầu nếu argv được truyền trực tiếp từ sys.argv
+            parse_args = argv[1:] if len(argv) > 0 and not argv[0].startswith("-") else argv
+            parser = argparse.ArgumentParser(description="Parallel Non-YouTube Video Downloader")
+            parser.add_argument("--csv", type=str, default=None, help="Path to source CSV file")
+            parser.add_argument("--out", type=str, default=None, help="Path to output directory")
+            parser.add_argument("--workers", type=int, default=None, help="Number of parallel workers")
+            args = parser.parse_args(parse_args)
+            csv_path = args.csv or csv_path or default_csv
+            output_dir = args.out or output_dir or default_out
+            max_workers = args.workers or max_workers or default_workers
+        else:
+            csv_path = csv_path or default_csv
+            output_dir = output_dir or default_out
+            max_workers = max_workers or default_workers
+
+        # Hàm helper log tích hợp
+        def _log(level: str, msg: str):
+            if self.context and hasattr(self.context, "utils_service") and self.context.utils_service:
+                self.context.utils_service.log(level, msg)
+            else:
+                prefix = "[*]" if level == "info" else f"[{level.upper()}]"
+                print(f"{prefix} {msg}")
+
+        _log("info", "=" * 80)
+        _log("info", "PARALLEL NON-YOUTUBE VIDEO DOWNLOADER")
+        _log("info", f"Source CSV : {csv_path}")
+        _log("info", f"Output Dir : {output_dir}")
+        _log("info", "=" * 80)
         
         if not os.path.exists(csv_path):
-            print(f"[-] Error: CSV file does not exist at {csv_path}")
+            _log("error", f"CSV file does not exist at {csv_path}")
             return
             
         os.makedirs(output_dir, exist_ok=True)
@@ -797,10 +883,10 @@ class DownloaderService:
                 reader = csv.DictReader(f)
                 rows = list(reader)
         except Exception as e:
-            print(f"[-] Error reading CSV: {e}")
+            _log("error", f"Error reading CSV: {e}")
             return
             
-        print(f"[+] Total rows found in CSV: {len(rows)}")
+        _log("info", f"Total rows found in CSV: {len(rows)}")
         
         # Filter for unique non-YouTube video URLs
         to_download = []
@@ -814,9 +900,8 @@ class DownloaderService:
 
         for row in rows:
             video_url = row.get("video_url", "").strip()
-            youtube_url = row.get("youtube_url", "").strip()
             
-            if _is_yt(video_url) or _is_yt(youtube_url):
+            if _is_yt(video_url):
                 continue
                 
             if video_url and video_url.startswith("http"):
@@ -825,27 +910,19 @@ class DownloaderService:
                     to_download.append(row)
                     
         total_videos = len(to_download)
-        print(f"[+] Found {total_videos} unique non-YouTube video URLs to download.")
+        _log("info", f"Found {total_videos} unique non-YouTube video URLs to download.")
         
         if total_videos == 0:
-            print("[*] No non-YouTube videos to download. Exiting.")
+            _log("info", "No non-YouTube videos to download. Exiting.")
             return
             
         success_count = 0
         fail_count = 0
         skip_count = 0
         
-        max_workers = 10
-        print(f"[+] Starting download with {max_workers} parallel workers...")
-        print("-" * 80)
+        _log("info", f"Starting download with {max_workers} parallel workers...")
+        _log("info", "-" * 80)
         
-        def _sanitize(app_name):
-            if not app_name:
-                return "UnknownApp"
-            cleaned = re.sub(r'[^\w\s-]', '', app_name)
-            cleaned = re.sub(r'\s+', '_', cleaned).strip()
-            return cleaned if cleaned else "UnknownApp"
-
         def _download_vid_task(idx, item):
             ad_id = item.get("ad_id", "unknown").strip()
             app_name = item.get("app_name", "UnknownApp").strip()
@@ -856,15 +933,21 @@ class DownloaderService:
             match_ext = re.search(r'\.(\w{3,4})$', url_path)
             if match_ext:
                 ext = f".{match_ext.group(1)}"
-                
-            cleaned_app = _sanitize(app_name)
-            final_filename = f"{cleaned_app}_{ad_id}{ext}"
+            video_name = item.get("video_name", "").strip()
+            if video_name:
+                final_filename = video_name
+            else:
+                base_filename, _ = self.context.utils_service.get_unique_filename(app_name)
+                if ext != ".mp4":
+                    final_filename = os.path.splitext(base_filename)[0] + ext
+                else:
+                    final_filename = base_filename
             final_path = os.path.join(output_dir, final_filename)
             
             if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
                 return "skip", final_filename, video_url
                 
-            print(f"[{idx}/{total_videos}] Downloading: {final_filename}...")
+            _log("info", f"[{idx}/{total_videos}] Downloading: {final_filename}...")
             
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -887,7 +970,7 @@ class DownloaderService:
                 os.rename(temp_path, final_path)
                 return "success", final_filename, video_url
             except Exception as e:
-                print(f"    [ERROR] Download failed for {video_url}: {e}")
+                _log("error", f"Download failed for {video_url}: {e}")
                 if os.path.exists(temp_path):
                     try:
                         os.remove(temp_path)
@@ -911,14 +994,14 @@ class DownloaderService:
                     else:
                         fail_count += 1
                 except Exception as e:
-                    print(f"[-] Thread execution error: {e}")
+                    _log("error", f"Thread execution error: {e}")
                     fail_count += 1
                     
-        print("\n" + "=" * 80)
-        print("DOWNLOAD COMPLETED SUMMARY")
-        print(f"Total Videos processed : {total_videos}")
-        print(f"Successfully downloaded: {success_count}")
-        print(f"Skipped (already exist): {skip_count}")
-        print(f"Failed downloads       : {fail_count}")
-        print("=" * 80)
+        _log("info", "\n" + "=" * 80)
+        _log("info", "DOWNLOAD COMPLETED SUMMARY")
+        _log("info", f"Total Videos processed : {total_videos}")
+        _log("info", f"Successfully downloaded: {success_count}")
+        _log("info", f"Skipped (already exist): {skip_count}")
+        _log("info", f"Failed downloads       : {fail_count}")
+        _log("info", "=" * 80)
 
