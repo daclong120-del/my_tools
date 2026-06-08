@@ -468,3 +468,340 @@ class SocialPetaDownloaderCore:
             self.log("info", "[*] Không có video_name nào cần điền.")
             
         return filled_count
+
+    def run_download_cli(
+        self,
+        csv_path: str,
+        output_dir: Optional[str] = None,
+        mode: str = "all",
+        threads: int = 3
+    ) -> None:
+        """
+        CLI để tải tài nguyên hình ảnh / video từ file CSV với cấu hình linh hoạt.
+        """
+        import sys
+        if not os.path.exists(csv_path):
+            print(f"[-] LỖI: File CSV không tồn tại tại: {csv_path}")
+            sys.exit(1)
+
+        print(f"[*] Bắt đầu tiến trình tải tài nguyên từ CSV: {csv_path}")
+        print(f"[*] Chế độ tải: {mode} | Luồng tối đa: {threads}")
+        
+        base_dir = output_dir if output_dir else os.path.dirname(os.path.abspath(csv_path))
+        print(f"[*] Thư mục lưu kết quả: {base_dir}")
+
+        if mode in ("all", "image"):
+            print("[*] Đang tải hình ảnh...")
+            img_out = os.path.join(base_dir, "download_images")
+            self.downloader_service.run_download_images_cli(csv_path=csv_path, output_dir=img_out, max_workers=threads)
+            
+            print("[*] Đang tạo file CSV lọc riêng cho hình ảnh...")
+            img_csv = os.path.join(base_dir, "download_images.csv")
+            self.downloader_service.run_filter_image_creatives_cli(input_file=csv_path, output_file=img_csv)
+
+        if mode in ("all", "cdn-video"):
+            print("[*] Đang tải video CDN trực tiếp...")
+            cdn_out = os.path.join(base_dir, "download_videos_not_youtube")
+            self.downloader_service.run_download_videos_not_youtube_cli(csv_path=csv_path, output_dir=cdn_out, max_workers=threads)
+            
+            print("[*] Đang tạo file CSV lọc riêng cho video CDN...")
+            cdn_csv = os.path.join(base_dir, "download_videos_not_youtube.csv")
+            self.downloader_service.run_filter_cdn_video_creatives_cli(input_file=csv_path, output_file=cdn_csv)
+
+        if mode in ("all", "youtube"):
+            print("[*] Đang tải video YouTube...")
+            yt_out = os.path.join(base_dir, "download_videos_youtube_only")
+            self.youtube_service.run_download_video_youtube_only_cli(csv_path=csv_path, output_dir=yt_out, max_workers=threads)
+            
+            print("[*] Đang tạo file CSV lọc riêng cho video YouTube...")
+            yt_csv = os.path.join(base_dir, "download_videos_youtube_only.csv")
+            self.youtube_service.run_filter_youtube_creatives_cli(input_file=csv_path, output_file=yt_csv)
+
+        print("[+] Hoàn tất tiến trình tải tài nguyên và tạo các file CSV phân loại.")
+
+    def run_crawl_cli(
+        self,
+        pages: int = 10,
+        threads: int = 5,
+        output_dir: Optional[str] = None
+    ) -> None:
+        """
+        CLI để chạy luồng cào và tải tự động hoàn toàn (Full Flow) với giao diện giám sát tiến độ.
+        """
+        import sys
+        import time
+        
+        if output_dir:
+            self.update_download_dir(output_dir)
+
+        print(f"[*] Khởi chạy SocialPeta Downloader Core với {threads} luồng...")
+        self.start_system(thread_count=threads)
+        
+        print("[*] Đang quét các tab đang hoạt động trong Chrome...")
+        active_tabs = self.detect_tabs()
+        if not active_tabs:
+            print("[-] Không tìm thấy tab SocialPeta nào. Vui lòng kiểm tra lại Chrome.")
+            self.stop_system()
+            sys.exit(1)
+            
+        crawl_threads = []
+        for tab in active_tabs:
+            idx = tab["index"]
+            print(f"[*] Bắt đầu cào tab [{idx}] - {pages} trang...")
+            t = threading.Thread(target=self.run_tab_scraper, args=(idx, pages), daemon=True)
+            t.start()
+            crawl_threads.append(t)
+            
+        try:
+            while self.running:
+                if sys.stdout.isatty():
+                    os.system('cls' if os.name == 'nt' else 'clear')
+                print("==================================================")
+                print("         STATUS MONITOR (NON-INTERACTIVE)         ")
+                print("==================================================")
+                
+                scrapers_alive = any(t.is_alive() for t in crawl_threads)
+                pending = self.stats.get("pending", 0)
+                downloading = self.stats.get("downloading", 0)
+                stats = self.stats
+                
+                print(f"  - Scrapers running: {scrapers_alive}")
+                print(f"  - Total sniffed:    {stats.get('total_sniffed', 0)}")
+                print(f"  - Waiting:          {pending}")
+                print(f"  - Downloading:      {downloading}")
+                print(f"  - Saved (Unique):   {stats.get('done', 0)}")
+                print(f"  - Failed:           {stats.get('failed', 0)}")
+                print(f"  - Expired:          {stats.get('expired', 0)}")
+                print(f"  - Duplicate:        {stats.get('duplicate', 0)}")
+                print("==================================================")
+                
+                if not scrapers_alive and pending == 0 and downloading == 0:
+                    print("[+] Tất cả luồng scraper đã hoàn thành và file đã tải xong!")
+                    break
+                    
+                time.sleep(5)
+                
+        except KeyboardInterrupt:
+            print("[*] Người dùng yêu cầu dừng...")
+        finally:
+            print("[*] Đang dừng SocialPeta Downloader Engine...")
+            self.stop_system()
+            print("[+] Đã dừng SocialPeta Downloader.")
+
+    def run_interactive_menu(self) -> None:
+        """
+        Khởi chạy menu tương tác (Interactive CLI TUI) sử dụng InquirerPy.
+        """
+        from InquirerPy import inquirer
+        from InquirerPy.base import Choice
+        import contextlib
+        import io
+        import sys
+        import time
+
+        print("[*] Đang khởi động hệ thống...", end="\r", flush=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            pass
+        
+        # Auto detect Chrome status on port 9222
+        chrome_service = self.chrome_service
+        if not chrome_service._is_chrome_cdp_active(9222):
+            print("[*] Đang khởi chạy Chrome debug (cổng 9222)...", end="\r", flush=True)
+            chrome_service.ensure_chrome_debug_port(9222)
+            time.sleep(2)
+            
+        download_dir = self.download_dir
+        pages_limit = 5
+        
+        while True:
+            os.system('cls' if os.name == 'nt' else 'clear')
+            print("=========================================================")
+            print("          SOCIALPETA DOWNLOADER INTERACTIVE CLI          ")
+            print("=========================================================")
+            print(f"  Thư mục lưu hiện tại: {download_dir}")
+            print(f"  Số lượng trang tải:    {pages_limit}")
+            print("=========================================================")
+            
+            choices = [
+                Choice("1", "1. Tải hết (Videos, YouTube, Ảnh)"),
+                Choice("2", "2. Chỉ tải YouTube"),
+                Choice("3", "3. Chỉ tải ảnh"),
+                Choice("4", "4. Thay đổi đường dẫn tải mặc định"),
+                Choice("5", "5. Thay đổi số lượng trang tải mặc định"),
+                Choice("exit", "6. Thoát")
+            ]
+            
+            def safe_select(message, choices, default="1"):
+                try:
+                    if not sys.stdin.isatty():
+                        raise RuntimeError("Non-TTY environment")
+                    return inquirer.select(
+                        message=message,
+                        choices=choices,
+                        default=default
+                    ).execute()
+                except Exception:
+                    print(f"\n{message}")
+                    for choice in choices:
+                        name = choice.name if hasattr(choice, "name") else str(choice)
+                        print(f"  {name}")
+                    while True:
+                        val = input(f"Chọn tùy chọn (mặc định '{default}'): ").strip()
+                        val = val.replace('\ufeff', '').replace('\xef\xbb\xbf', '').strip()
+                        if not val:
+                            return default
+                        for choice in choices:
+                            c_val = choice.value if hasattr(choice, "value") else str(choice)
+                            c_name = choice.name if hasattr(choice, "name") else str(choice)
+                            if val == c_val or val == c_name.split('.')[0].strip():
+                                return c_val
+                        print("Lựa chọn không hợp lệ, vui lòng thử lại.")
+
+            def safe_text(message, default=""):
+                try:
+                    if not sys.stdin.isatty():
+                        raise RuntimeError("Non-TTY environment")
+                    return inquirer.text(
+                        message=message,
+                        default=default
+                    ).execute()
+                except Exception:
+                    val = input(f"{message} (mặc định '{default}'): ").strip()
+                    val = val.replace('\ufeff', '').replace('\xef\xbb\xbf', '').strip()
+                    return val if val else default
+
+            try:
+                choice = safe_select(
+                    message="Vui lòng chọn hành động bạn muốn thực hiện (Sử dụng mũi tên hoặc gõ số để chọn):",
+                    choices=choices,
+                    default="1"
+                )
+            except KeyboardInterrupt:
+                print("\n[*] Đang thoát...")
+                sys.exit(0)
+                
+            if choice == "exit":
+                print("[*] Đang thoát...")
+                break
+                
+            elif choice == "4":
+                try:
+                    print("[*] Đang mở hộp thoại chọn thư mục...")
+                    selected_dir = self.utils_service.select_directory_gui(download_dir)
+                    
+                    if selected_dir:
+                        new_dir = os.path.abspath(selected_dir)
+                        self.update_download_dir(new_dir)
+                        self.save_config(new_dir)
+                        download_dir = self.download_dir
+                        print(f"[+] Đã cập nhật thư mục lưu: {download_dir}")
+                    else:
+                        print("[-] Đã hủy chọn hoặc không thể mở hộp thoại. Bạn có muốn nhập thủ công không?")
+                        use_manual = safe_select(
+                            message="Chọn phương thức:",
+                            choices=[
+                                Choice("yes", "Có, nhập thủ công bằng tay"),
+                                Choice("no", "Không, giữ nguyên thư mục cũ")
+                            ],
+                            default="no"
+                        )
+                        if use_manual == "yes":
+                            new_dir = safe_text(
+                                message="Nhập đường dẫn tải mới:",
+                                default=download_dir
+                            )
+                            if new_dir:
+                                new_dir = os.path.abspath(new_dir)
+                                self.update_download_dir(new_dir)
+                                self.save_config(new_dir)
+                                download_dir = self.download_dir
+                                print(f"[+] Đã cập nhật thư mục lưu: {download_dir}")
+                except Exception as e:
+                    print(f"[-] Lỗi trong quá trình cập nhật thư mục: {e}")
+                    new_dir = safe_text(
+                        message="Nhập đường dẫn tải mới:",
+                        default=download_dir
+                    )
+                    if new_dir:
+                        new_dir = os.path.abspath(new_dir)
+                        self.update_download_dir(new_dir)
+                        self.save_config(new_dir)
+                        download_dir = self.download_dir
+                        print(f"[+] Đã cập nhật thư mục lưu: {download_dir}")
+                time.sleep(1.5)
+                    
+            elif choice == "5":
+                try:
+                    new_pages = safe_text(
+                        message="Nhập số lượng trang tải mới (mặc định: 5):",
+                        default=str(pages_limit)
+                    )
+                    if new_pages.isdigit() and int(new_pages) > 0:
+                        pages_limit = int(new_pages)
+                        print(f"[+] Đã cập nhật số trang tải: {pages_limit}")
+                    else:
+                        print("[-] Giá trị nhập vào không hợp lệ.")
+                    time.sleep(1.5)
+                except KeyboardInterrupt:
+                    pass
+                    
+            elif choice in ("1", "2", "3"):
+                csv_path = self.csv_path
+                
+                if choice == "1":
+                    download_mode = "all"
+                elif choice == "2":
+                    download_mode = "youtube"
+                else:
+                    download_mode = "image"
+                    
+                print(f"[*] Chế độ tải: {download_mode}")
+                print(f"[*] File CSV lưu tại: {csv_path}")
+                print(f"[*] Thư mục tải xuống: {download_dir}")
+                print(f"[*] Số lượng trang cần tải: {pages_limit}")
+                
+                try:
+                    print(f"[*] Bắt đầu cào dữ liệu từ trang 1 đến {pages_limit}...")
+                    self.youtube_service.run_scrape_pages_yt_cli(
+                        start_page=1,
+                        end_page=pages_limit,
+                        csv_path=csv_path,
+                        port=9222
+                    )
+                    
+                    print(f"\n[*] Đang điền tên file thiếu cho CSV: {csv_path}...")
+                    self.fill_video_names_in_csv(csv_path)
+                    
+                    print(f"\n[*] Bắt đầu tải tài nguyên từ CSV...")
+                    if download_mode in ("all", "image"):
+                        img_out = os.path.join(download_dir, "download_images")
+                        self.downloader_service.run_download_images_cli(csv_path=csv_path, output_dir=img_out)
+                        
+                        print("[*] Đang tạo file CSV lọc riêng cho hình ảnh...")
+                        img_csv = os.path.join(download_dir, "download_images.csv")
+                        self.downloader_service.run_filter_image_creatives_cli(input_file=csv_path, output_file=img_csv)
+
+                    if download_mode in ("all", "cdn-video"):
+                        cdn_out = os.path.join(download_dir, "download_videos_not_youtube")
+                        self.downloader_service.run_download_videos_not_youtube_cli(csv_path=csv_path, output_dir=cdn_out)
+                        
+                        print("[*] Đang tạo file CSV lọc riêng cho video CDN...")
+                        cdn_csv = os.path.join(download_dir, "download_videos_not_youtube.csv")
+                        self.downloader_service.run_filter_cdn_video_creatives_cli(input_file=csv_path, output_file=cdn_csv)
+
+                    if download_mode in ("all", "youtube"):
+                        yt_out = os.path.join(download_dir, "download_videos_youtube_only")
+                        self.youtube_service.run_download_video_youtube_only_cli(csv_path=csv_path, output_dir=yt_out)
+                        
+                        print("[*] Đang tạo file CSV lọc riêng cho video YouTube...")
+                        yt_csv = os.path.join(download_dir, "download_videos_youtube_only.csv")
+                        self.youtube_service.run_filter_youtube_creatives_cli(input_file=csv_path, output_file=yt_csv)
+                        
+                    print("\n[🏁] HOÀN TẤT LUỒNG TẢI DỮ LIỆU!")
+                except Exception as e:
+                    import traceback
+                    print(f"[-] Lỗi trong quá trình cào/tải: {e}\n{traceback.format_exc()}")
+                    
+                print("\nNhấn Enter để quay lại menu chính...")
+                input()
+

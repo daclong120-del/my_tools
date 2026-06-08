@@ -941,6 +941,65 @@ class UtilsService:
             print("\n[+] Đã hoàn tất quy trình test chuyển trang.")
             browser.close()
 
+    def select_directory_gui(self, initial_dir: str) -> Optional[str]:
+        """
+        Mở hộp thoại chọn thư mục bằng Tkinter với fallback sang PowerShell trên Windows.
+        """
+        tkinter_ok = False
+        try:
+            _fix_tcl_tk_env()
+            import tkinter as tk
+            root = tk.Tk()
+            root.destroy()
+            tkinter_ok = True
+        except Exception:
+            pass
+
+        if tkinter_ok:
+            try:
+                res = select_directory(initial_dir=initial_dir, title="Chọn thư mục lưu trữ tải xuống")
+                if res:
+                    return res
+            except Exception:
+                pass
+
+        if sys.platform.startswith('win'):
+            try:
+                import subprocess
+                initial_dir_escaped = initial_dir.replace("\\", "\\\\").replace('"', '\\"')
+                ps_code = f"""
+                Add-Type -AssemblyName System.Windows.Forms
+                $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+                $dialog.Description = "Chọn thư mục lưu trữ tải xuống"
+                $dialog.SelectedPath = "{initial_dir_escaped}"
+                $dialog.ShowNewFolderButton = $true
+                $win = New-Object System.Windows.Forms.Form
+                $win.TopMost = $true
+                $result = $dialog.ShowDialog($win)
+                if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
+                    Write-Output $dialog.SelectedPath
+                }}
+                """
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                
+                proc = subprocess.Popen(
+                    ["powershell", "-NoProfile", "-Command", ps_code],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    startupinfo=startupinfo
+                )
+                stdout, stderr = proc.communicate(timeout=60)
+                if proc.returncode == 0 and stdout.strip():
+                    return stdout.strip()
+            except Exception:
+                pass
+
+        return None
+
+
 
 
 # hàm đã hoạt động rồi đừng động vào
