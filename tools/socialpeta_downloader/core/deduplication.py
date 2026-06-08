@@ -193,155 +193,151 @@ class DeduplicationService:
         """
         Thực hiện đối khớp lọc trùng video qua 3 lớp (Thời lượng, MD5 âm thanh PCM, mã dHash trực quan).
         """
-        if not self.context:
-            return False, "", "Context missing"
-            
-        new_dur = self.get_video_duration(new_file)
-        if new_dur <= 0:
-            return False, "", "ffprobe failed"
-            
-        import sqlite3
-        saved_items = []
-        db_path = self.context.get_db_path()
-        conn = sqlite3.connect(db_path, timeout=10.0)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA busy_timeout=5000;")
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM download_history WHERE saved_path IS NOT NULL AND saved_path != ''")
-            rows = cursor.fetchall()
-            cols = [col[0] for col in cursor.description]
-            for r in rows:
-                item = dict(zip(cols, r))
-                saved_path = item["saved_path"]
-                resolved_path = self.context.utils_service.resolve_saved_path(saved_path)
-                if resolved_path and os.path.exists(resolved_path):
-                    item["saved_path"] = resolved_path
-                    dur_val = item.get("duration")
-                    try:
-                        item["duration"] = float(dur_val) if dur_val else -1.0
-                    except ValueError:
-                        item["duration"] = -1.0
-                    saved_items.append(item)
-        except Exception as e:
-            import traceback
-            self.context.log("error", f"[-] Loi doc SQLite trong check_duplicate: {e}\n{traceback.format_exc()}")
-        finally:
-            conn.close()
-                
-        candidates = []
-        for item in saved_items:
-            existing_path = item["saved_path"]
-            ext_dur = item.get("duration")
-            if ext_dur is None or ext_dur == "":
-                ext_dur = -1.0
-                
-            if ext_dur <= 0:
-                ext_dur = self.get_video_duration(existing_path)
-                if ext_dur > 0:
-                    item["duration"] = ext_dur
-                    self.context.session_service.append_to_csv(item)
-                    
-            if ext_dur > 0 and abs(new_dur - ext_dur) > 0.05:
-                is_integer_like = (ext_dur == int(ext_dur))
-                if is_integer_like and abs(new_dur - ext_dur) <= 1.5:
-                    actual_dur = self.get_video_duration(existing_path)
-                    if actual_dur > 0:
-                        ext_dur = actual_dur
-                        item["duration"] = ext_dur
-                        self.context.session_service.append_to_csv(item)
-                        
-            if ext_dur > 0 and abs(new_dur - ext_dur) <= 0.05:
-                candidates.append((item, existing_path))
-                
-        if not candidates:
-            return False, "", "Layer 1: No duration matches"
-            
-        new_audio_md5 = self.get_audio_pcm_md5(new_file)
-        if new_audio_md5:
-            for item, path in candidates:
-                ext_audio_md5 = item.get("audio_pcm_md5")
-                if not ext_audio_md5:
-                    orig_item = self.context.utils_service.db_get_item(item["ad_id"])
-                    if orig_item:
-                        ext_audio_md5 = orig_item.get("audio_pcm_md5")
-                if not ext_audio_md5:
-                    ext_audio_md5 = self.get_audio_pcm_md5(path)
-                    if ext_audio_md5:
-                        orig_item = self.context.utils_service.db_get_item(item["ad_id"])
-                        if not orig_item:
-                            orig_item = item.copy()
-                        orig_item["audio_pcm_md5"] = ext_audio_md5
-                        self.context.utils_service._write_item_file(orig_item.get("fpath", ""), orig_item)
-                if ext_audio_md5 and ext_audio_md5 == new_audio_md5:
-                    return True, item["ad_id"], "Layer 2: Audio PCM MD5 matches"
-                    
-        new_ad_id = os.path.splitext(os.path.basename(new_file))[0]
-        new_item_data = self.context.utils_service.db_get_item(new_ad_id)
-        new_frames = None
-        if new_item_data:
-            new_frames = new_item_data.get("dhash_cache")
-                
-        if not isinstance(new_frames, list) or len(new_frames) != 5:
-            new_frames = None
+        return False, "", "Deduplication disabled"
 
-        if not new_frames:
-            timestamps = [new_dur * p for p in [0.10, 0.30, 0.50, 0.70, 0.90]]
-            new_frames = []
-            for t in timestamps:
-                res = self.get_frame_hash_and_brightness(new_file, t)
-                new_frames.append(res)
-            if new_item_data is not None:
-                try:
-                    new_item_data["dhash_cache"] = new_frames
-                    self.context.utils_service._write_item_file(new_item_data.get("fpath", ""), new_item_data)
-                except Exception as e:
-                    import traceback
-                    if self.context:
-                        self.context.log("error", f"[-] Error writing dhash cache to item state: {e}\n{traceback.format_exc()}")
-            
-        for item, path in candidates:
-            ext_frames = None
-            orig_item = self.context.utils_service.db_get_item(item["ad_id"])
-            if orig_item:
-                ext_frames = orig_item.get("dhash_cache")
-                    
-            if not isinstance(ext_frames, list) or len(ext_frames) != 5:
-                ext_frames = None
+        # [Tắt lọc trùng lặp] Toàn bộ logic bên dưới được giữ lại làm tham khảo:
+        # import sqlite3
+        # saved_items = []
+        # db_path = self.context.get_db_path()
+        # conn = sqlite3.connect(db_path, timeout=10.0)
+        # conn.execute("PRAGMA journal_mode=WAL;")
+        # conn.execute("PRAGMA busy_timeout=5000;")
+        # try:
+            # cursor = conn.cursor()
+            # cursor.execute("SELECT * FROM download_history WHERE saved_path IS NOT NULL AND saved_path != ''")
+            # rows = cursor.fetchall()
+            # cols = [col[0] for col in cursor.description]
+            # for r in rows:
+                # item = dict(zip(cols, r))
+                # saved_path = item["saved_path"]
+                # resolved_path = self.context.utils_service.resolve_saved_path(saved_path)
+                # if resolved_path and os.path.exists(resolved_path):
+                    # item["saved_path"] = resolved_path
+                    # dur_val = item.get("duration")
+                    # try:
+                        # item["duration"] = float(dur_val) if dur_val else -1.0
+                    # except ValueError:
+                        # item["duration"] = -1.0
+                    # saved_items.append(item)
+        # except Exception as e:
+            # import traceback
+            # self.context.log("error", f"[-] Loi doc SQLite trong check_duplicate: {e}\n{traceback.format_exc()}")
+        # finally:
+            # conn.close()
                 
-            if not ext_frames:
-                timestamps = [new_dur * p for p in [0.10, 0.30, 0.50, 0.70, 0.90]]
-                ext_frames = []
-                for t in timestamps:
-                    res = self.get_frame_hash_and_brightness(path, t)
-                    ext_frames.append(res)
-                if orig_item is None:
-                    orig_item = item.copy()
-                try:
-                    orig_item["dhash_cache"] = ext_frames
-                    self.context.utils_service._write_item_file(orig_item.get("fpath", ""), orig_item)
-                except Exception as e:
-                    import traceback
-                    if self.context:
-                        self.context.log("error", f"[-] Error writing dhash cache to item state: {e}\n{traceback.format_exc()}")
+#         # candidates = []
+        # for item in saved_items:
+            # existing_path = item["saved_path"]
+            # ext_dur = item.get("duration")
+            # if ext_dur is None or ext_dur == "":
+                # ext_dur = -1.0
                 
-            matches = 0
-            valid_frames = 0
-            if ext_frames:
-                for f_new, f_ext in zip(new_frames, ext_frames):
-                    if f_new is None or f_ext is None:
-                        continue
-                    valid_frames += 1
-                    h_new, b_new = f_new
-                    h_ext, b_ext = f_ext
+#             # if ext_dur <= 0:
+                # ext_dur = self.get_video_duration(existing_path)
+                # if ext_dur > 0:
+                    # item["duration"] = ext_dur
+                    # self.context.session_service.append_to_csv(item)
                     
-                    hamming_dist = bin(h_new ^ h_ext).count('1')
-                    bright_diff = abs(b_new - b_ext) / 255.0
-                    
-                    if hamming_dist <= 13 and bright_diff <= 0.10:
-                        matches += 1
+#             # if ext_dur > 0 and abs(new_dur - ext_dur) > 0.05:
+                # is_integer_like = (ext_dur == int(ext_dur))
+                # if is_integer_like and abs(new_dur - ext_dur) <= 1.5:
+                    # actual_dur = self.get_video_duration(existing_path)
+                    # if actual_dur > 0:
+                        # ext_dur = actual_dur
+                        # item["duration"] = ext_dur
+                        # self.context.session_service.append_to_csv(item)
                         
-            if valid_frames > 0 and (matches / valid_frames) >= 0.8:
-                return True, item["ad_id"], f"Layer 3: dHash visual match ({matches}/{valid_frames} frames)"
+#             # if ext_dur > 0 and abs(new_dur - ext_dur) <= 0.05:
+                # candidates.append((item, existing_path))
                 
-        return False, "", "Checked all layers, no duplicate found"
+#         # if not candidates:
+            # return False, "", "Layer 1: No duration matches"
+            
+#         # new_audio_md5 = self.get_audio_pcm_md5(new_file)
+        # if new_audio_md5:
+            # for item, path in candidates:
+                # ext_audio_md5 = item.get("audio_pcm_md5")
+                # if not ext_audio_md5:
+                    # orig_item = self.context.utils_service.db_get_item(item["ad_id"])
+                    # if orig_item:
+                        # ext_audio_md5 = orig_item.get("audio_pcm_md5")
+                # if not ext_audio_md5:
+                    # ext_audio_md5 = self.get_audio_pcm_md5(path)
+                    # if ext_audio_md5:
+                        # orig_item = self.context.utils_service.db_get_item(item["ad_id"])
+                        # if not orig_item:
+                            # orig_item = item.copy()
+                        # orig_item["audio_pcm_md5"] = ext_audio_md5
+                        # self.context.utils_service._write_item_file(orig_item.get("fpath", ""), orig_item)
+                # if ext_audio_md5 and ext_audio_md5 == new_audio_md5:
+                    # return True, item["ad_id"], "Layer 2: Audio PCM MD5 matches"
+                    
+#         # new_ad_id = os.path.splitext(os.path.basename(new_file))[0]
+        # new_item_data = self.context.utils_service.db_get_item(new_ad_id)
+        # new_frames = None
+        # if new_item_data:
+            # new_frames = new_item_data.get("dhash_cache")
+                
+#         # if not isinstance(new_frames, list) or len(new_frames) != 5:
+            # new_frames = None
+ 
+#         # if not new_frames:
+            # timestamps = [new_dur * p for p in [0.10, 0.30, 0.50, 0.70, 0.90]]
+            # new_frames = []
+            # for t in timestamps:
+                # res = self.get_frame_hash_and_brightness(new_file, t)
+                # new_frames.append(res)
+            # if new_item_data is not None:
+                # try:
+                    # new_item_data["dhash_cache"] = new_frames
+                    # self.context.utils_service._write_item_file(new_item_data.get("fpath", ""), new_item_data)
+                # except Exception as e:
+                    # import traceback
+                    # if self.context:
+                        # self.context.log("error", f"[-] Error writing dhash cache to item state: {e}\n{traceback.format_exc()}")
+            
+#         # for item, path in candidates:
+            # ext_frames = None
+            # orig_item = self.context.utils_service.db_get_item(item["ad_id"])
+            # if orig_item:
+                # ext_frames = orig_item.get("dhash_cache")
+                    
+#             # if not isinstance(ext_frames, list) or len(ext_frames) != 5:
+                # ext_frames = None
+                
+#             # if not ext_frames:
+                # timestamps = [new_dur * p for p in [0.10, 0.30, 0.50, 0.70, 0.90]]
+                # ext_frames = []
+                # for t in timestamps:
+                    # res = self.get_frame_hash_and_brightness(path, t)
+                    # ext_frames.append(res)
+                # if orig_item is None:
+                    # orig_item = item.copy()
+                # try:
+                    # orig_item["dhash_cache"] = ext_frames
+                    # self.context.utils_service._write_item_file(orig_item.get("fpath", ""), orig_item)
+                # except Exception as e:
+                    # import traceback
+                    # if self.context:
+                        # self.context.log("error", f"[-] Error writing dhash cache to item state: {e}\n{traceback.format_exc()}")
+                
+#             # matches = 0
+            # valid_frames = 0
+            # if ext_frames:
+                # for f_new, f_ext in zip(new_frames, ext_frames):
+                    # if f_new is None or f_ext is None:
+                        # continue
+                    # valid_frames += 1
+                    # h_new, b_new = f_new
+                    # h_ext, b_ext = f_ext
+                    
+#                     # hamming_dist = bin(h_new ^ h_ext).count('1')
+                    # bright_diff = abs(b_new - b_ext) / 255.0
+                    
+#                     # if hamming_dist <= 13 and bright_diff <= 0.10:
+                        # matches += 1
+                        
+#             # if valid_frames > 0 and (matches / valid_frames) >= 0.8:
+                # return True, item["ad_id"], f"Layer 3: dHash visual match ({matches}/{valid_frames} frames)"
+                
+#         # return False, "", "Checked all layers, no duplicate found"

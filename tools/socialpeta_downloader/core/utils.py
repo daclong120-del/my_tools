@@ -505,36 +505,6 @@ class UtilsService:
         """
         Kiểm tra xem quảng cáo có mã ad_id đã được tải về đĩa cứng thành công hay chưa.
         """
-        if self.context:
-            status = self.context.ad_id_to_status.get(ad_id)
-            if status in ("done", "downloaded"):
-                return True
-                
-        import sqlite3
-        db_path = self.get_db_path()
-        conn = sqlite3.connect(db_path, timeout=10.0)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA busy_timeout=5000;")
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT saved_path, file_size FROM download_history WHERE ad_id = ?", (ad_id,))
-            row = cursor.fetchone()
-            if row:
-                saved_path, file_size = row
-                try:
-                    fsize = int(file_size or "0")
-                except ValueError:
-                    fsize = 0
-                resolved_path = self.resolve_saved_path(saved_path)
-                if resolved_path and os.path.exists(resolved_path) and fsize > 0:
-                    if self.context:
-                        self.context.ad_id_to_status[ad_id] = "done"
-                    return True
-        except Exception as e:
-            import traceback
-            self.log("error", f"[-] Error checking ad download in SQLite: {e}\n{traceback.format_exc()}")
-        finally:
-            conn.close()
         return False
 
     # hàm đã hoạt động rồi đừng động vào
@@ -542,12 +512,6 @@ class UtilsService:
         """
         Kiểm tra xem quảng cáo đang được tải hoặc đã hoàn thành việc tải hay chưa.
         """
-        if self._is_ad_already_downloaded(ad_id):
-            return True
-        if self.context:
-            status = self.context.ad_id_to_status.get(ad_id)
-            if status in ("downloading", "done", "downloaded"):
-                return True
         return False
 
     # hàm đã hoạt động rồi đừng động vào

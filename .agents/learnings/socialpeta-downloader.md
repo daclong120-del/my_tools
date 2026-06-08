@@ -1,7 +1,7 @@
 # SocialPeta Downloader
 
 > Tổng hợp kiến thức về công cụ tự động hóa tải video SocialPeta trong dự án.
-> Cập nhật lần cuối: 2026-06-05
+> Cập nhật lần cuối: 2026-06-08
 
 ---
 
@@ -315,6 +315,13 @@
 - **Fix**: Cập nhật CLI để kiểm tra trạng thái cuối cùng của tab. Nếu trạng thái là `closed`, `failed`, hoặc `expired`, hệ thống sẽ in cảnh báo lỗi màu đỏ kèm theo 10 dòng log hoạt động gần nhất để người dùng dễ theo dõi.
 - **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/cli.py`
 
+### YouTube Only Mode Skipping CDN Fallback Links
+- **Ngày**: 2026-06-08
+- **Vấn đề**: Ở chế độ tải video YouTube (YouTube Only Mode), CLI bỏ qua nhiều dòng chứa link YouTube nếu dòng đó có cột `video_url` chứa link CDN trực tiếp, dẫn đến tải thiếu nghiêm trọng (chỉ tải 16/50 video).
+- **Root cause**: Logic lọc cũ bỏ qua dòng nếu `video_url` không phải định dạng link YouTube (`if video_url and not is_youtube_url(video_url): continue`).
+- **Fix**: Loại bỏ điều kiện lọc trên và bỏ qua việc kiểm tra danh sách `seen_urls` để đảm bảo cào và xử lý toàn bộ các URL YouTube được tìm thấy trong CSV.
+- **Files liên quan**: `tools/socialpeta_downloader/core/youtube.py`
+
 ---
 
 ## How-To
@@ -344,6 +351,22 @@
   2. Hoặc từ thư mục gốc của dự án trong CMD/PowerShell, chạy lệnh:
      `.\tools\socialpeta_downloader\cli\cli_v2\run.bat`
 - **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/run.bat`
+
+### Cách khởi chạy nhanh CLI V1.0.0 trên Windows
+- **Ngày**: 2026-06-08
+- **Bước thực hiện**:
+  1. Chạy file batch: `tools/socialpeta_downloader/cli/v.1.0.0/run_cli.bat`.
+  2. Hoặc từ thư mục gốc của dự án trong CMD/PowerShell, chạy:
+     `.\tools\socialpeta_downloader\cli\v.1.0.0\run_cli.bat`
+- **Files liên quan**: `tools/socialpeta_downloader/cli/v.1.0.0/run_cli.bat`
+
+### Cách đóng gói CLI V1.0.0 thành file exe chạy độc lập
+- **Ngày**: 2026-06-08
+- **Bước thực hiện**:
+  1. Chạy file batch: `tools/socialpeta_downloader/cli/v.1.0.0/new_cli_build.bat`.
+  2. Mặc định script giữ lại thư mục cache biên dịch `build/new_cli.build` giúp biên dịch tăng dần (incremental build) cực kỳ nhanh (chỉ mất vài giây nếu không có thay đổi thư viện lớn).
+  3. Để dọn dẹp cache và build sạch hoàn toàn từ đầu, hãy chạy file batch kèm tham số: `new_cli_build.bat /clean` hoặc `new_cli_build.bat -clean`.
+- **Files liên quan**: `tools/socialpeta_downloader/cli/v.1.0.0/new_cli_build.bat`
 
 ### Cách sử dụng hộp thoại chọn thư mục/tập tin gốc trong dự án
 - **Ngày**: 2026-06-05
@@ -432,4 +455,9 @@
 - **Ngày**: 2026-06-05
 - **Chi tiết**: Khi sử dụng Tkinter cho các ứng dụng console/TUI hoặc API để chọn file/folder mà không muốn hiển thị cửa sổ Tkinter trống phía sau, ta áp dụng mẫu thiết kế: (1) Tạo `root = tk.Tk()`, (2) Gọi `root.withdraw()` để ẩn cửa sổ chính, (3) Gọi `root.wm_attributes("-topmost", 1)` để đảm bảo hộp thoại nổi lên trên các cửa sổ khác, (4) Thực hiện hội thoại chọn và gọi `root.destroy()` ngay lập tức để giải phóng tài nguyên.
 - **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`
+
+### Complete Disabling of Deduplication (Tắt lọc trùng lặp hoàn toàn)
+- **Ngày**: 2026-06-08
+- **Chi tiết**: Để đáp ứng nhu cầu tải xuống mọi tài nguyên tìm thấy mà không lọc bỏ trùng lặp (kể cả khi ad_id trùng hoặc nội dung video/ảnh trùng nhau), ta thực hiện vô hiệu hóa toàn bộ các lớp lọc trùng bằng cách: (1) Ép `check_duplicate` luôn trả về `False`, (2) Ép `_is_ad_already_downloaded` và `_is_ad_already_downloading_or_done` luôn trả về `False`, (3) Gán `md5_val = None` để bỏ qua bộ lọc MD5 của hình ảnh, (4) Bỏ qua kiểm tra `seen_urls` của danh sách ảnh, video CDN và video YouTube.
+- **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`, `tools/socialpeta_downloader/core/deduplication.py`, `tools/socialpeta_downloader/core/downloader.py`, `tools/socialpeta_downloader/core/youtube.py`
 

@@ -1057,22 +1057,15 @@ class YoutubeService:
                 return False
                 
         to_download = []
-        seen_urls = set()
         for row in rows:
             video_url = row.get("video_url", "").strip()
-            # If there's a valid direct CDN video link, skip it as it's processed by the other downloader
-            if video_url and not is_youtube_url(video_url):
-                continue
-                
             yt_url = row.get("youtube_url", "").strip()
             if not yt_url:
                 if is_youtube_url(video_url):
                     yt_url = video_url
             if yt_url and is_youtube_url(yt_url):
-                if yt_url not in seen_urls:
-                    seen_urls.add(yt_url)
-                    row["youtube_url_resolved"] = yt_url
-                    to_download.append(row)
+                row["youtube_url_resolved"] = yt_url
+                to_download.append(row)
                     
         total_videos = len(to_download)
         _log("info", f"Found {total_videos} unique YouTube video URLs to download.")

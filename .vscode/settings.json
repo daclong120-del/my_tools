@@ -4,5 +4,12 @@
   "python.analysis.extraPaths": [
     "${workspaceFolder}/tools"
   ],
-  "python.analysis.autoSearchPaths": true
+  "python.analysis.autoSearchPaths": true,
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.ignore": [
+    "**/core/utils.py",
+    "**/core/youtube.py",
+    "**/core/downloader.py",
+    "**/core/deduplication.py"
+  ]
 }

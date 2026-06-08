@@ -318,7 +318,7 @@ def run_interactive_menu():
                         if val == c_val or val == c_name.split('.')[0].strip():
                             return c_val
                     print("Lựa chọn không hợp lệ, vui lòng thử lại.")
-
+        
         def safe_text(message, default=""):
             try:
                 if not sys.stdin.isatty():

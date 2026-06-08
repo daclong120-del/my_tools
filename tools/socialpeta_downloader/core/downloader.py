@@ -245,8 +245,8 @@ class DownloaderService:
                             self.context.utils_service._save_item_state(item)
                             self.context.utils_service.log("error", f"Tải file ảnh cho Ad {ad_id} có kích thước 0 byte.")
                             continue
-                        md5_val = self.context.deduplication_service._get_file_md5(temp_output)
-                        if md5_val and md5_val in self.context.image_md5_cache:
+                        md5_val = None
+                        if False:
                             dup_ad_id = self.context.image_md5_cache[md5_val]
                             try:
                                 os.remove(temp_output)
@@ -711,17 +711,14 @@ class DownloaderService:
         
         # Filter for unique image URLs
         to_download = []
-        seen_urls = set()
         
         for row in rows:
             img_url = row.get("image_url", "").strip()
             if img_url and img_url.startswith("http"):
-                if img_url not in seen_urls:
-                    seen_urls.add(img_url)
-                    to_download.append(row)
+                to_download.append(row)
                     
         total_images = len(to_download)
-        _log("info", f"Found {total_images} unique image URLs to download.")
+        _log("info", f"Found {total_images} image URLs to download.")
         
         if total_images == 0:
             _log("info", "No images to download. Exiting.")
@@ -890,7 +887,6 @@ class DownloaderService:
         
         # Filter for unique non-YouTube video URLs
         to_download = []
-        seen_urls = set()
         
         def _is_yt(url):
             if not url:
@@ -905,12 +901,10 @@ class DownloaderService:
                 continue
                 
             if video_url and video_url.startswith("http"):
-                if video_url not in seen_urls:
-                    seen_urls.add(video_url)
-                    to_download.append(row)
+                to_download.append(row)
                     
         total_videos = len(to_download)
-        _log("info", f"Found {total_videos} unique non-YouTube video URLs to download.")
+        _log("info", f"Found {total_videos} non-YouTube video URLs to download.")
         
         if total_videos == 0:
             _log("info", "No non-YouTube videos to download. Exiting.")

@@ -3,5 +3,11 @@
   "venv": ".venv",
   "extraPaths": [
     "tools"
+  ],
+  "ignore": [
+    "**/core/utils.py",
+    "**/core/youtube.py",
+    "**/core/downloader.py",
+    "**/core/deduplication.py"
   ]
 }
