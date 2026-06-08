@@ -883,4 +883,26 @@ class SessionService:
             print(f"[-] Có lỗi xảy ra trong quá trình dọn dẹp: {e}")
             traceback.print_exc()
 
+    def clear_sqlite_only(self):
+        """
+        Chỉ xóa tệp cơ sở dữ liệu SQLite (db.sqlite3) và các file WAL/SHM liên quan.
+        """
+        paths = self._resolve_paths()
+        db_path = paths["db_path"]
+        for suffix in ["", "-wal", "-shm"]:
+            path = db_path + suffix
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    if self.context:
+                        self.context.log("info", f"[+] Đã xóa tệp SQLite: {path}")
+                    else:
+                        print(f"[+] Đã xóa tệp SQLite: {path}")
+                except Exception as e:
+                    if self.context:
+                        self.context.log("warning", f"[-] Không thể xóa tệp SQLite {path}: {e}")
+                    else:
+                        print(f"[-] Không thể xóa tệp SQLite {path}: {e}")
+
+
 

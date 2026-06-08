@@ -148,15 +148,15 @@ class DownloaderService:
             media_type = item.get("media_type", "video")
             item["fpath"] = fpath
             try:
-                with self.context.history_lock:
-                    if (self.context.utils_service._is_ad_already_downloaded(ad_id) or 
-                        self.context.utils_service._is_ad_already_downloading_or_done(ad_id, exclude_path=fpath)):
-                        item["status"] = "duplicate"
-                        self.context.utils_service._save_item_state(item)
-                        self.context.session_service.append_to_audit_csv(
-                            ad_id, item.get("app_name", "UnknownApp"), "", "Duplicate check at start of download"
-                        )
-                        continue
+                # with self.context.history_lock:
+                #     if (self.context.utils_service._is_ad_already_downloaded(ad_id) or 
+                #         self.context.utils_service._is_ad_already_downloading_or_done(ad_id, exclude_path=fpath)):
+                #         item["status"] = "duplicate"
+                #         self.context.utils_service._save_item_state(item)
+                #         self.context.session_service.append_to_audit_csv(
+                #             ad_id, item.get("app_name", "UnknownApp"), "", "Duplicate check at start of download"
+                #         )
+                #         continue
 
                 # Chuẩn hóa và xác thực URL
                 video_url = item.get("video_url", "").strip()
@@ -510,7 +510,8 @@ class DownloaderService:
                 dup_ad_id = ""
                 reason = ""
                 if binaries_available:
-                    is_dup, dup_ad_id, reason = self.context.deduplication_service.check_duplicate(temp_path)
+                    # is_dup, dup_ad_id, reason = self.context.deduplication_service.check_duplicate(temp_path)
+                    pass
                 else:
                     self.context.utils_service.log("error", f"Bỏ qua bước trùng lặp cho Ad {ad_id}: ffmpeg hoặc ffprobe không khả dụng (đã bị xóa, lỗi hoặc mất quyền chạy).")
                     item["dedup_checked"] = False
@@ -756,8 +757,8 @@ class DownloaderService:
                 final_filename, _ = self.context.utils_service.get_unique_image_filename(app_name, img_url)
             final_path = os.path.join(output_dir, final_filename)
             
-            if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
-                return "skip", final_filename, img_url
+            # if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+            #     return "skip", final_filename, img_url
                 
             _log("info", f"[{idx}/{total_images}] Downloading: {final_filename}...")
             
@@ -944,8 +945,8 @@ class DownloaderService:
                     final_filename = base_filename
             final_path = os.path.join(output_dir, final_filename)
             
-            if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
-                return "skip", final_filename, video_url
+            # if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+            #     return "skip", final_filename, video_url
                 
             _log("info", f"[{idx}/{total_videos}] Downloading: {final_filename}...")
             

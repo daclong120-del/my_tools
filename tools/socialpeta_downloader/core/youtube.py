@@ -659,12 +659,26 @@ class YoutubeService:
                 item["status"] = "failed"
                 self.context.utils_service._save_item_state(item)
 
+    def clear_youtube_processed_attributes(self, page) -> None:
+        """
+        Dọn dẹp thuộc tính tạm data-youtube-processed trên giao diện để tránh kẹt trạng thái.
+        """
+        try:
+            page.evaluate("""() => {
+                document.querySelectorAll('[data-youtube-processed]').forEach(el => {
+                    el.removeAttribute('data-youtube-processed');
+                });
+            }""")
+        except Exception:
+            pass
+
     # hàm đã hoạt động rồi đừng động vào
     def click_and_extract_youtube_from_page(self, page) -> list:
         """
         Quét giao diện, click vào nút Chi tiết (Detail) của từng card có icon YouTube để mở modal, 
         trích xuất đường dẫn YouTube và đóng modal.
         """
+        self.clear_youtube_processed_attributes(page)
         results = []
         # 1. Cuộn trang xuống để load hết các card trên giao diện trước
         print("[*] Đang cuộn trang để tải đầy đủ các card quảng cáo...")
@@ -805,14 +819,7 @@ class YoutubeService:
                 pass
                 
         # Xóa các attribute tạm để không ảnh hưởng đến các lần quét sau
-        try:
-            page.evaluate("""() => {
-                document.querySelectorAll('[data-youtube-processed]').forEach(el => {
-                    el.removeAttribute('data-youtube-processed');
-                });
-            }""")
-        except Exception:
-            pass
+        self.clear_youtube_processed_attributes(page)
             
         return results
 
@@ -1059,15 +1066,16 @@ class YoutubeService:
         to_download = []
         seen_urls = set()
         for row in rows:
-            video_url = row.get("video_url", "").strip()
-            # If there's a valid direct CDN video link, skip it as it's processed by the other downloader
-            if video_url and not is_youtube_url(video_url):
-                continue
-                
             yt_url = row.get("youtube_url", "").strip()
+            video_url = row.get("video_url", "").strip()
+            
             if not yt_url:
                 if is_youtube_url(video_url):
                     yt_url = video_url
+                else:
+                    if video_url:
+                        continue
+                        
             if yt_url and is_youtube_url(yt_url):
                 if yt_url not in seen_urls:
                     seen_urls.add(yt_url)
@@ -1108,9 +1116,9 @@ class YoutubeService:
             
             _log("info", f"[{index}/{total_videos}] Processing: {app_name} (ID: {ad_id}) -> {final_filename}")
             
-            if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
-                _log("info", f"Already downloaded as {final_filename}")
-                return "skip", final_filename
+            # if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+            #     _log("info", f"Already downloaded as {final_filename}")
+            #     return "skip", final_filename
                 
             is_truncated = not is_untruncated_youtube_url(youtube_url)
             has_cdn_fallback = video_url and not is_youtube_url(video_url)
@@ -1344,6 +1352,12 @@ class YoutubeService:
                     print("[-] Không tìm thấy quảng cáo nào trong phản hồi API.")
             except Exception as e:
                 print(f"[-] Lỗi trong quá trình di chuyển trang hoặc xử lý phản hồi API: {e}")
+                
+            try:
+                print("[*] Đang xóa dấu vết (thuộc tính processed) trên trang...")
+                self.clear_youtube_processed_attributes(page)
+            except Exception as e:
+                print(f"[WARN] Lỗi khi xóa dấu vết: {e}")
                 
             browser.close()
             print(f"\n[🏁] Hoàn tất cào trang {current_page}.")

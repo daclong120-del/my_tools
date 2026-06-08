@@ -798,10 +798,18 @@ class SocialPetaDownloaderCore:
                         self.youtube_service.run_filter_youtube_creatives_cli(input_file=csv_path, output_file=yt_csv)
                         
                     print("\n[🏁] HOÀN TẤT LUỒNG TẢI DỮ LIỆU!")
+                    self.clear_sqlite_only()
                 except Exception as e:
                     import traceback
                     print(f"[-] Lỗi trong quá trình cào/tải: {e}\n{traceback.format_exc()}")
                     
                 print("\nNhấn Enter để quay lại menu chính...")
                 input()
+
+    def clear_sqlite_only(self) -> None:
+        """
+        Chỉ xóa cơ sở dữ liệu SQLite (db.sqlite3) và các file WAL/SHM liên quan.
+        """
+        self.session_service.clear_sqlite_only()
+
 

@@ -1,7 +1,7 @@
 # SocialPeta Downloader
 
 > Tổng hợp kiến thức về công cụ tự động hóa tải video SocialPeta trong dự án.
-> Cập nhật lần cuối: 2026-06-05
+> Cập nhật lần cuối: 2026-06-08
 
 ---
 
@@ -315,6 +315,19 @@
 - **Fix**: Cập nhật CLI để kiểm tra trạng thái cuối cùng của tab. Nếu trạng thái là `closed`, `failed`, hoặc `expired`, hệ thống sẽ in cảnh báo lỗi màu đỏ kèm theo 10 dòng log hoạt động gần nhất để người dùng dễ theo dõi.
 - **Files liên quan**: `tools/socialpeta_downloader/cli/cli_v2/cli.py`
 
+### Bỏ sót video YouTube có link CDN đi kèm trong luồng tải YouTube
+- **Ngày**: 2026-06-08
+- **Vấn đề**: Chỉ có một phần nhỏ video YouTube (các video không có link CDN đi kèm) được xử lý tải về, phần còn lại bị bỏ qua hoàn toàn.
+- **Root cause**: Logic lọc trong `run_download_video_youtube_only_cli` của `youtube.py` bỏ qua bất kỳ quảng cáo nào có cột `video_url` (CDN link) không trống nhằm nhường cho downloader khác, khiến quảng cáo có cả hai link bị loại khỏi luồng tải YouTube.
+- **Fix**: Điều chỉnh logic để luôn ưu tiên tải bằng YouTube khi dòng quảng cáo có `youtube_url` hợp lệ, chỉ bỏ qua khi không có `youtube_url` và `video_url` là link CDN trực tiếp.
+- **Files liên quan**: `tools/socialpeta_downloader/core/youtube.py`
+
+### Kẹt trạng thái đã nhấp (data-youtube-processed) trên card quảng cáo YouTube
+- **Ngày**: 2026-06-08
+- **Vấn đề**: Sau khi kết thúc cào hoặc bị dừng CLI đột ngột, các lần cào sau trên cùng trình duyệt Chrome không trích xuất được link YouTube do các card quảng cáo vẫn bị gán thuộc tính `data-youtube-processed` khiến tiến trình tự động bỏ qua click.
+- **Fix**: Bổ sung cơ chế gọi hàm dọn dẹp `clear_youtube_processed_attributes(page)` trên DOM ngay trước khi đóng trình duyệt Playwright (`browser.close()`) trong các hàm CLI cào trang.
+- **Files liên quan**: `tools/socialpeta_downloader/core/youtube.py`, `tools/socialpeta_downloader/core/sniffer.py`
+
 ---
 
 ## How-To
@@ -432,4 +445,20 @@
 - **Ngày**: 2026-06-05
 - **Chi tiết**: Khi sử dụng Tkinter cho các ứng dụng console/TUI hoặc API để chọn file/folder mà không muốn hiển thị cửa sổ Tkinter trống phía sau, ta áp dụng mẫu thiết kế: (1) Tạo `root = tk.Tk()`, (2) Gọi `root.withdraw()` để ẩn cửa sổ chính, (3) Gọi `root.wm_attributes("-topmost", 1)` để đảm bảo hộp thoại nổi lên trên các cửa sổ khác, (4) Thực hiện hội thoại chọn và gọi `root.destroy()` ngay lập tức để giải phóng tài nguyên.
 - **Files liên quan**: `tools/socialpeta_downloader/core/utils.py`
+
+### YouTube Only Download & Scrape Flow Pattern
+- **Ngày**: 2026-06-08
+- **Chi tiết**: Mẫu thiết kế phân tách rõ ràng quy trình cào link YouTube (bắt API, chuyển trang tạm để re-trigger, click card có icon YouTube trên DOM và đóng modal bằng Escape) và quy trình tải song song đa luồng qua `yt_dlp` kết hợp `CDN Fallback` tải trực tiếp khi link YouTube bị lỗi hoặc cắt cụt.
+- **Files liên quan**: `tools/socialpeta_downloader/core/youtube.py`
+
+### Skip Check & Multi-layer Deduplication Bypass Pattern
+- **Ngày**: 2026-06-08
+- **Chi tiết**: Mẫu thiết kế tạm thời bypass/comment-out kiểm tra tệp tin tồn tại trên đĩa và luồng check trùng lặp 3 lớp để hỗ trợ kiểm thử tải đầy đủ file.
+  Các vị trí cần khôi phục lại (uncomment):
+  1. **YouTube exist check**: [core/youtube.py:L1111-1114](file:///d:/Python/my_tools/tools/socialpeta_downloader/core/youtube.py#L1111-L1114) (Hàm `_download_yt_task` checking file exists).
+  2. **DB duplicate check**: [core/downloader.py:L151-159](file:///d:/Python/my_tools/tools/socialpeta_downloader/core/downloader.py#L151-L159) (Hàm `_download_worker` history lock duplicate checking).
+  3. **3-layer duplicate check**: [core/downloader.py:L512-515](file:///d:/Python/my_tools/tools/socialpeta_downloader/core/downloader.py#L512-L515) (Hàm `stream_3_dedup_filter` checking duplicate).
+  4. **Image exist check**: [core/downloader.py:L759-760](file:///d:/Python/my_tools/tools/socialpeta_downloader/core/downloader.py#L759-L760) (Hàm `_download_img_task` file exists checking).
+  5. **CDN Video exist check**: [core/downloader.py:L947-948](file:///d:/Python/my_tools/tools/socialpeta_downloader/core/downloader.py#L947-L948) (Hàm `_download_vid_task` file exists checking).
+- **Files liên quan**: `tools/socialpeta_downloader/core/youtube.py`, `tools/socialpeta_downloader/core/downloader.py`
 
