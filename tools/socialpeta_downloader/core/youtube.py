@@ -1348,7 +1348,8 @@ class YoutubeService:
         csv_path: Optional[str] = None,
         argv: Optional[list] = None,
         progress_callback: Optional[callable] = None,
-        port: int = 9222
+        port: int = 9222,
+        skip_youtube: bool = False
     ) -> dict:
         """
         CLI / API to scrape from start_page to end_page, capture API response and click YouTube to extract URLs,
@@ -1505,15 +1506,16 @@ class YoutubeService:
                         continue
                         
                     has_youtube_to_scrape = False
-                    for item in parsed_items:
-                        platform = item.get("platform", "").lower()
-                        media_type = item.get("media_type", "")
-                        yt_url = item.get("youtube_url", "")
-                        is_yt = (platform == "youtube" or media_type in ["youtube_video", "youtube_click_required"])
-                        has_valid_yt = is_untruncated_youtube_url(yt_url)
-                        if is_yt and not has_valid_yt:
-                            has_youtube_to_scrape = True
-                            break
+                    if not skip_youtube:
+                        for item in parsed_items:
+                            platform = item.get("platform", "").lower()
+                            media_type = item.get("media_type", "")
+                            yt_url = item.get("youtube_url", "")
+                            is_yt = (platform == "youtube" or media_type in ["youtube_video", "youtube_click_required"])
+                            has_valid_yt = is_untruncated_youtube_url(yt_url)
+                            if is_yt and not has_valid_yt:
+                                has_youtube_to_scrape = True
+                                break
                             
                     matched_count = 0
                     if has_youtube_to_scrape:

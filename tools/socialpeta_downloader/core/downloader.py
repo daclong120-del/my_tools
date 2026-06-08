@@ -896,7 +896,12 @@ class DownloaderService:
 
         for row in rows:
             video_url = row.get("video_url", "").strip()
+            yt_url = row.get("youtube_url", "").strip()
             
+            # Prioritize youtube_url: if a valid youtube_url is present, skip CDN download
+            if yt_url and _is_yt(yt_url):
+                continue
+                
             if _is_yt(video_url):
                 continue
                 

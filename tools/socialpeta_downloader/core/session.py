@@ -755,8 +755,8 @@ class SessionService:
             try:
                 conn.execute("PRAGMA journal_mode=WAL;")
                 conn.execute("DELETE FROM ad_metadata;")
-                conn.execute("DELETE FROM duplicate_audit;")
                 if clear_history:
+                    conn.execute("DELETE FROM duplicate_audit;")
                     conn.execute("DELETE FROM download_history;")
                 conn.commit()
                 conn.execute("VACUUM;")
@@ -804,40 +804,8 @@ class SessionService:
                 else:
                     print(f"[-] Error clearing temp download directory: {e}")
                 
-        # 4. Truncate CSV files if needed
-        if clear_history:
-            csv_path = paths["csv_path"]
-            if os.path.exists(csv_path):
-                try:
-                    fieldnames = ["ad_id", "video_name", "media_type", "video_url", "youtube_url",
-                                  "duration", "impression", "heat", "platform", "download_time",
-                                  "publisher", "app_name", "area", "copywriting_language", "title",
-                                  "body", "deployment_time", "saved_path", "file_size"]
-                    with open(csv_path, 'w', encoding='utf-8-sig', newline='') as f:
-                        writer = csv.writer(f)
-                        writer.writerow(fieldnames)
-                    print(f"[+] download_info.csv truncated: {csv_path}")
-                except Exception as e:
-                    if self.context:
-                        self.context.log("warning", f"[-] Error truncating download_info.csv: {e}")
-                    else:
-                        print(f"[-] Error truncating download_info.csv: {e}")
-                    
-        # Always clear/reset duplicate_audit.csv
-        audit_csv_path = paths["audit_csv_path"]
-        if os.path.exists(audit_csv_path):
-            try:
-                fieldnames = ["timestamp", "ad_id", "app_name", "duplicate_ad_id", "reason"]
-                with open(audit_csv_path, 'w', encoding='utf-8-sig', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(fieldnames)
-                print(f"[+] duplicate_audit.csv truncated: {audit_csv_path}")
-            except Exception as e:
-                if self.context:
-                    self.context.log("warning", f"[-] Error truncating duplicate_audit.csv: {e}")
-                else:
-                    print(f"[-] Error truncating duplicate_audit.csv: {e}")
-                
+
+
         # Reset memory caches in context if available
         if self.context:
             if hasattr(self.context, "image_md5_cache") and isinstance(self.context.image_md5_cache, dict):

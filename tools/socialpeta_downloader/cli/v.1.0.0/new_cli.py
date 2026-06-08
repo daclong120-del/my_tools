@@ -9,18 +9,27 @@ import os
 import argparse
 import time
 import threading
+import builtins
 
-# Set encoding on Windows to prevent UnicodeEncodeError
+# Override print to force flush=True globally to avoid stdout buffering issues in cmd/powershell
+_orig_print = builtins.print
+def print(*args, **kwargs):
+    kwargs.setdefault('flush', True)
+    _orig_print(*args, **kwargs)
+builtins.print = print
+
+# Set encoding on Windows to prevent UnicodeEncodeError and force unbuffered stdout/stderr
 if sys.platform.startswith('win'):
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='backslashreplace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='backslashreplace')
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='backslashreplace', write_through=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='backslashreplace', write_through=True)
 
 # Thêm workspace root/tools vào sys.path để import được socialpeta_downloader
 scripts_dir = os.path.dirname(os.path.abspath(__file__))
 tools_dir = os.path.dirname(os.path.dirname(scripts_dir))
 if tools_dir not in sys.path:
     sys.path.insert(0, tools_dir)
+
 
 from socialpeta_downloader.core import SocialPetaDownloaderCore
 from socialpeta_downloader.core.chrome import ChromeService
@@ -432,7 +441,8 @@ def run_interactive_menu():
                     start_page=1,
                     end_page=pages_limit,
                     csv_path=csv_path,
-                    port=9222
+                    port=9222,
+                    skip_youtube=(download_mode == "image")
                 )
                 
                 # Điền tên file trước khi tải xuống để cập nhật cột video_name trong file CSV
